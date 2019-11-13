@@ -192,7 +192,7 @@ void main()
 
     int c = sizeof(struct sockaddr_in);
     while ((newSocket = recvfrom(serverInfo.socket, inputData, sizeof(inputData), MSG_WAITALL,
-                                 (struct sockaddr *)&client_addr, (socklen_t *)&c)) >= 0)
+                                 (struct sockaddr *)&client_addr, (socklen_t *)&c)) > 0)
     {
         printf("Connection accepted\n");
 

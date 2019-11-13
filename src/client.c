@@ -55,13 +55,13 @@ unsigned crc8x_fast(unsigned crc, void const *mem, size_t len)
 
 struct Package
 {
-    char destiny[5];
-    char source[5];
+    uint32_t destiny;
+    uint32_t source;
     uint8_t type;
     uint8_t sequency;
     uint16_t size;
     uint32_t crc;
-    char data[240];
+    unsigned char data[240];
 } __attribute__((__packed__));
 
 struct ConnectionData
@@ -71,7 +71,7 @@ struct ConnectionData
     uint32_t fileSize;
 } __attribute__((__packed__));
 
-struct Package parseToPackage(char input[255])
+struct Package parseToPackage(char input[256])
 {
     struct Package package;
     char aux[5];
@@ -152,14 +152,21 @@ struct ClientInfo startClient()
     return clientInfo;
 }
 
+// function macros
+void executeStopNWait(int fileSize, char fileName[]);
+void executeGoBackN(int fileSize, int windowSize, char fileName[]);
+
 // gcc client.c -o client
 // ./client
-void main()
+void main(int args, char ** argc)
 {
     int newSocket;
     char buffer[MAX_BUFFER_SIZE];
 
     //TODO obter as informacoes por parametro, como windowSize e qual o controle de fluxo
+    int fileSize = 256; //TODO verificar como calcular o tamanho do arquivo
+    int flowControl = 0;
+    int windowSize = 8;
 
     struct ClientInfo clientInfo = startClient();
 
@@ -175,8 +182,9 @@ void main()
         // get input file that will be sent to server
         while (!isValidFile)
         {
-            printf("Enter file name or path to send to server:");
-            printf("Type 'exit' to exit program.");
+            printf("Enter file name or path to send to server.\n");
+            printf("Type 'exit' to exit program.\n");
+            printf("REDESI@file$ ");
 
             fgets(fileName, sizeof(fileName), stdin);
 
@@ -186,16 +194,18 @@ void main()
             file = fopen(fileName, "r");
 
             if (file != NULL)
+            {
                 isValidFile = true;
+                fclose(file);
+            }
         }
 
         // send package to stablish connection with server
 
         struct ConnectionData data;
-        // TODO obter esses parametros para mandar para o servidor
-        // data.fileSize = fileSize;
-        // data.flowControl = flowControl;
-        // data.windowSize = windowSize;
+        data.fileSize = fileSize;
+        data.flowControl = flowControl;
+        data.windowSize = windowSize;
 
         int clientIpFormatted = inet_addr(clientInfo.clientIp);
 
@@ -206,6 +216,7 @@ void main()
         package.sequency = 0;
         package.size = sizeof(struct ConnectionData);
         memcpy(package.data, &data, sizeof(struct ConnectionData));
+        package.crc = 0;
         package.crc = crc8x_fast(CRC_POLYNOME, (const void *)&package, sizeof(struct Package));
 
         retSend = sendto(clientInfo.socket, (const void *)&package, sizeof(struct Package),
@@ -222,6 +233,8 @@ void main()
                            MSG_WAITALL, (struct sockaddr *)&clientInfo.sockaddr,
                            &clientInfo.socket);
 
+        //TODO verificar se veio algum codigo de erro
+
         struct Package ackPackage = parseToPackage(inputData);
 
         if (ackPackage.type != ACK_TYPE)
@@ -231,10 +244,10 @@ void main()
         }
 
         //TODO fazer a comunicacao utilizando a tecnica de controle de fluxo
-        // if (flowControl == 0)
-        //     executeStopAndWait(fileSize, windowSize);
-        // else
-        //     executeGoBackN(fileSize, windowSize);
+        if (flowControl == 0)
+            executeStopAndWait(fileSize, fileName);
+        else
+            executeGoBackN(fileSize, windowSize, fileName);
 
 
         fclose(file);
@@ -243,4 +256,20 @@ void main()
     close(clientInfo.socket);
 
     printf("Client socket connection closed. Finishing...");
+}
+
+//TODO criar fila na hora q ler o arquivo e colocar ele na fila pra soh enviar nas janelas
+
+void executeStopNWait(int fileSize, char fileName[])
+{
+    FILE *file = fopen(fileName, "r");
+
+
+
+    fclose(file);
+}
+
+void executeGoBackN(int fileSize, int windowSize, char fileName[])
+{
+
 }
