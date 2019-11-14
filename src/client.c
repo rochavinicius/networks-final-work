@@ -10,15 +10,7 @@
 #include <errno.h>
 #include <netdb.h>
 
-#define SERVER_PORT 8888
-#define SERVER_IP "127.0.0.1"
-#define MAX_BUFFER_SIZE 1024
-#define DATA_TYPE 0
-#define ACK_TYPE 1
-#define CONNECTION_TYPE 2
-
-// polinomio: 1000 1011 (bin), 0x8C (hexa), 139 (dec)
-#define CRC_POLYNOME 139
+#include "macros.h"
 
 unsigned char const crc8x_table[] = {
     0x00, 0x31, 0x62, 0x53, 0xc4, 0xf5, 0xa6, 0x97, 0xb9, 0x88, 0xdb, 0xea, 0x7d,
@@ -53,34 +45,20 @@ unsigned crc8x_fast(unsigned crc, void const *mem, size_t len)
     return crc;
 }
 
-struct Package
-{
-    uint32_t destiny;
-    uint32_t source;
-    uint8_t type;
-    uint8_t sequency;
-    uint16_t size;
-    uint32_t crc;
-    unsigned char data[240];
-} __attribute__((__packed__));
-
-struct ConnectionData
-{
-    uint32_t flowControl;
-    uint8_t windowSize;
-    uint32_t fileSize;
-} __attribute__((__packed__));
-
 struct Package parseToPackage(char input[256])
 {
     struct Package package;
     char aux[5];
 
     // Destiny
-    memcpy(package.destiny, &input[0], 4);
+    memcpy(aux, &input[0], 4);
+    aux[4] = '\0';
+    package.destiny = atoi(aux);
 
     // Source
-    memcpy(package.source, &input[4], 4);
+    memcpy(aux, &input[4], 4);
+    aux[4] = '\0';
+    package.source = atoi(aux);
 
     // Type
     memcpy(aux, &input[8], 1);
@@ -107,13 +85,6 @@ struct Package parseToPackage(char input[256])
 
     return package;
 }
-
-struct ClientInfo
-{
-    int socket;
-    struct sockaddr_in sockaddr;
-    char *clientIp;
-};
 
 struct ClientInfo startClient()
 {
@@ -210,8 +181,8 @@ void main(int args, char ** argc)
         int clientIpFormatted = inet_addr(clientInfo.clientIp);
 
         struct Package package;
-        memcpy(package.destiny, &clientInfo.sockaddr.sin_addr.s_addr, 4);
-        memcpy(package.source, (const void *)&clientIpFormatted, 4);
+        package.destiny = clientInfo.sockaddr.sin_addr.s_addr;
+        package.source = clientIpFormatted;
         package.type = CONNECTION_TYPE;
         package.sequency = 0;
         package.size = sizeof(struct ConnectionData);

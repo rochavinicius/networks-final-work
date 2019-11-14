@@ -7,11 +7,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 
-#define SERVER_PORT 8888
-#define MAX_BUFFER_SIZE 255
-
-// polinomio: 1000 1011 (bin), 0x8C (hexa), 139 (dec)
-#define CRC_POLYNOME 139
+#include "macros.h"
 
 unsigned char const crc8x_table[] = {
     0x00, 0x31, 0x62, 0x53, 0xc4, 0xf5, 0xa6, 0x97, 0xb9, 0x88, 0xdb, 0xea, 0x7d,
@@ -46,27 +42,20 @@ unsigned crc8x_fast(unsigned crc, void const *mem, size_t len)
     return crc;
 }
 
-struct Package
-{
-    char destiny[5];
-    char source[5];
-    uint8_t type;
-    uint8_t sequency;
-    uint16_t size;
-    uint32_t crc;
-    char data[240];
-} __attribute__((__packed__));
-
 struct Package parseToPackage(char input[255])
 {
     struct Package package;
     char aux[5];
 
     // Destiny
-    memcpy(package.destiny, &input[0], 4);
+    memcpy(aux, &input[0], 4);
+    aux[4] = '\0';
+    package.destiny = atoi(aux);
 
     // Source
-    memcpy(package.source, &input[4], 4);
+    memcpy(aux, &input[4], 4);
+    aux[4] = '\0';
+    package.source = atoi(aux);
 
     // Type
     memcpy(aux, &input[8], 1);
@@ -93,12 +82,6 @@ struct Package parseToPackage(char input[255])
 
     return package;
 }
-
-struct ServerInfo
-{
-    int socket;
-    struct sockaddr_in sockaddr;
-};
 
 struct ServerInfo startServer()
 {
@@ -235,8 +218,8 @@ void main()
 
         // send connection stablished ack
         struct Package pkg;
-        strcpy(pkg.destiny, package.source);
-        strcpy(pkg.source, package.destiny);
+        pkg.destiny = package.source;
+        pkg.source = package.destiny;
         pkg.type = 1;
         pkg.sequency = 0;
         pkg.crc = crc8x_fast(CRC_POLYNOME, (const void *)&pkg, sizeof(pkg));
