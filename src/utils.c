@@ -38,15 +38,15 @@ struct ConnectionData *parseToConnectionData(char input[9])
     struct ConnectionData *connectionData = (struct ConnectionData *)malloc(sizeof(struct ConnectionData));
     char aux[5];
 
-    memcpy(aux, input[0], 4);
+    memcpy(aux, &input[0], 4);
     aux[4] = '\0';
     connectionData->flowControl = atoi(aux);
 
-    memcpy(aux, input[4], 1);
+    memcpy(aux, &input[4], 1);
     aux[1] = '\0';
     connectionData->windowSize = atoi(aux);
 
-    memcpy(aux, input[5], 4);
+    memcpy(aux, &input[5], 4);
     aux[4] = '\0';
     connectionData->fileSize = atoi(aux);
 

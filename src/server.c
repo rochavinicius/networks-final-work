@@ -44,24 +44,109 @@ struct ServerInfo *startServer()
     return si;
 }
 
-void executeStopAndWait(int size, int windowSize)
+void executeStopAndWait(int fileSize, struct ServerInfo *serverInfo);
+void executeGoBackN(int size, int windowSize);
+
+// gcc server.c -o server
+// ./server
+void main()
+{
+    int newSocket;
+    char inputData[MAX_BUFFER_SIZE];
+    struct sockaddr_in client_addr;
+
+    struct ServerInfo *serverInfo = startServer();
+
+    int c = sizeof(struct sockaddr_in);
+    while ((newSocket = recvfrom(serverInfo->socket, inputData, sizeof(inputData), MSG_WAITALL,
+                                 (struct sockaddr *)&client_addr, (socklen_t *)&c)) > 0)
+    {
+        printf("Connection accepted\n");
+
+        // ******************* INITIAL PACKAGE *******************
+
+        // for connection stablishment package, do not use any flow control technique
+        // just drop it case its with error
+        unsigned int crcRet = crc8x_fast(CRC_POLYNOME, inputData, sizeof(inputData));
+        if (crcRet != 0)
+            continue;
+
+        // Parse main pakage
+        struct Package *package = parseToPackage(inputData);
+
+        // wrong connection stablishment package
+        if (package->size < 1 || package->size > 16 || package->type != 3)
+        {
+            free(package);
+            continue;
+        }
+
+        // parse connection stablishment package
+        struct ConnectionData *connectionData = parseToConnectionData(inputData);
+
+        // validate for connection stablishment package limits
+        if (connectionData->flowControl != 1 && connectionData->flowControl != 0)
+        {
+            free(connectionData);
+            continue;
+        }
+        if (connectionData->windowSize < 1 || connectionData->windowSize > 16)
+        {
+            free(connectionData);
+            continue;
+        }
+
+        // send connection stablished ACK
+        struct Package ackPackage;
+        ackPackage.destiny = package->source;
+        ackPackage.source = package->destiny;
+        ackPackage.type = 1;
+        ackPackage.sequency = 0;
+        ackPackage.crc = 0;
+        ackPackage.crc = crc8x_fast(CRC_POLYNOME, (const void *)&ackPackage, sizeof(ackPackage));
+
+        // send ACK package
+        sendto(serverInfo->socket, (const void *)&ackPackage, sizeof(ackPackage), 0,
+               (const struct sockaddr *)&serverInfo->sockaddr,
+               sizeof(struct sockaddr));
+
+        if (connectionData->flowControl == 0)
+            executeStopAndWait(connectionData->fileSize, serverInfo);
+        else
+            executeGoBackN(connectionData->fileSize, connectionData->windowSize);
+
+        free(connectionData);
+        free(package);
+        free(serverInfo);
+
+        // sends final ack to finish execution
+        //TODO fazer ack final
+    }
+
+    if (newSocket < 0)
+    {
+        perror("Error recvfrom server.\n");
+        exit(EXIT_FAILURE);
+    }
+}
+
+void executeStopAndWait(int fileSize, struct ServerInfo *serverInfo)
 {
     FILE *file;
 
+    // file were the reiceved file will be saved
     file = fopen("receivedFile.txt", "w");
-
     if (file == NULL)
     {
-        perror("Error while creating received file.\n");
+        perror("Error while creating received file in Stop and Wait.\n");
         exit(1);
     }
 
-    while (size > 0)
+    while (fileSize > 0)
     {
         // receive
         // check errors
         // send ack
-        file -= windowSize;
     }
 
     fclose(file);
@@ -88,92 +173,4 @@ void executeGoBackN(int size, int windowSize)
     }
 
     fclose(file);
-}
-
-// gcc server.c -o server
-// ./server
-void main()
-{
-    int newSocket;
-    char inputData[MAX_BUFFER_SIZE];
-    struct sockaddr_in client_addr;
-
-    //TODO trocar para o tal do pontero
-    struct ServerInfo *serverInfo = startServer();
-
-    int c = sizeof(struct sockaddr_in);
-    while ((newSocket = recvfrom(serverInfo->socket, inputData, sizeof(inputData), MSG_WAITALL,
-                                 (struct sockaddr *)&client_addr, (socklen_t *)&c)) > 0)
-    {
-        printf("Connection accepted\n");
-
-        // ******************* INITIAL PACKAGE *******************
-
-        // for connection stablishment package, do not use any flow control technique
-        // just drop it case its with error
-        unsigned int crcRet = crc8x_fast(CRC_POLYNOME, inputData, sizeof(inputData));
-        if (crcRet != 0)
-            continue;
-
-        // Parse main pakage
-        //TODO faze o free du bagui
-        struct Package *package = parseToPackage(inputData);
-
-        // wrong connection stablishment package
-        //TODO verificar o campo Tamanho ao inves de ler os dados
-        if (strlen(package->data) != 9 || package->type != 3)
-            continue;
-
-        // parse connection stablishment package
-        int flowControl;
-        int windowSize;
-        int fileSize;
-
-        char aux[5];
-
-        memcpy(aux, &package->data[0], 4);
-        aux[4] = '\0';
-        flowControl = atoi(aux);
-
-        windowSize = package->data[4] - '0';
-
-        memcpy(aux, &package->data[5], 4);
-        aux[4] = '\0';
-        fileSize = atoi(aux);
-
-        if (flowControl != 1 && flowControl != 0)
-            continue;
-        if (windowSize < 1 || windowSize > 16)
-            continue;
-
-        // send connection stablished ack
-        struct Package pkg;
-        pkg.destiny = package->source;
-        pkg.source = package->destiny;
-        pkg.type = 1;
-        pkg.sequency = 0;
-        pkg.crc = 0;
-        pkg.crc = crc8x_fast(CRC_POLYNOME, (const void *)&pkg, sizeof(pkg));
-
-        sendto(serverInfo->socket, (const void *)&pkg, sizeof(pkg), 0,
-                         (const struct sockaddr *)&serverInfo->sockaddr,
-                         sizeof(struct sockaddr));
-
-        //TODO fazer a comunicacao utilizando a tecnica de controle de fluxo
-        if (flowControl == 0)
-            executeStopAndWait(fileSize, windowSize);
-        else
-            executeGoBackN(fileSize, windowSize);
-
-        // sends final ack to finish execution
-        //TODO fazer ack final
-    }
-
-    if (newSocket < 0)
-    {
-        perror("Error recvfrom server.\n");
-        exit(EXIT_FAILURE);
-    }
-
-    free(serverInfo);
 }
