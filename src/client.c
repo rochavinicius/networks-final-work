@@ -89,17 +89,36 @@ char * getValidFile()
 void executeStopAndWait(int fileSize, char fileName[], struct ClientInfo *clientInfo);
 void executeGoBackN(int fileSize, int windowSize, char fileName[]);
 
-// gcc client.c -o client
-// ./client
+void getCommandLineArgs(int args, char **argc, int *flowControl, int *windowSize)
+{
+    int c;
+    while ((c = getopt(args, argc, "t:s:")) != -1)
+    {
+        switch (c)
+        {
+            case 't':
+                *flowControl = atoi(optarg);
+                break;
+            case 's':
+                *windowSize = atoi(optarg);
+                break;
+        }
+    }
+}   
+
+// gcc utils.c client.c -o client
+// ./client -t {flowControl technique} -s {windowSize}
 void main(int args, char **argc)
 {
     int newSocket;
     char buffer[MAX_BUFFER_SIZE];
     long int fileSize;
-
-    //TODO obter as informacoes por parametro, como windowSize e qual o controle de fluxo
     int flowControl = 0;
     int windowSize = 8;
+
+    getCommandLineArgs(args, argc, &flowControl, &windowSize);
+
+    exit(0);
 
     struct ClientInfo *clientInfo = startClient();
 
