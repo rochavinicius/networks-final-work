@@ -12,7 +12,7 @@
 #define ACK_TYPE 1
 #define CONNECTION_TYPE 2
 
-// polinomio: x⁸ + x⁶ + x³ + x + 1 ->  1 0100 1011 (bin), 0x14B (hexa), 331 (dec)
+// polynome: x⁸ + x⁶ + x³ + x + 1 ->  1 0100 1011 (bin), 0x14B (hexa), 331 (dec)
 #define CRC_POLYNOME 331
 
 struct Package
@@ -36,6 +36,7 @@ struct ConnectionData
 struct ServerInfo
 {
     int socket;
+    struct sockaddr_in clientaddr;
     struct sockaddr_in sockaddr;
 };
 

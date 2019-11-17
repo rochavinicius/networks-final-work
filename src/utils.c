@@ -1,4 +1,5 @@
 #include "utils.h"
+#include <stdio.h>
 
 unsigned char const crc8x_table[] = {
     0x00, 0x31, 0x62, 0x53, 0xc4, 0xf5, 0xa6, 0x97, 0xb9, 0x88, 0xdb, 0xea, 0x7d,
@@ -24,6 +25,7 @@ unsigned char const crc8x_table[] = {
 
 unsigned crc8x_fast(unsigned crc, void const *mem, size_t len)
 {
+    return 0;
     unsigned char const *data = mem;
     if (data == NULL)
         return 0xff;
@@ -33,63 +35,25 @@ unsigned crc8x_fast(unsigned crc, void const *mem, size_t len)
     return crc;
 }
 
-struct ConnectionData *parseToConnectionData(char input[9])
+struct ConnectionData *parseToConnectionData(char input[])
 {
     struct ConnectionData *connectionData = (struct ConnectionData *)malloc(sizeof(struct ConnectionData));
-    char aux[5];
-
-    memcpy(aux, &input[0], 4);
-    aux[4] = '\0';
-    connectionData->flowControl = atoi(aux);
-
-    memcpy(aux, &input[4], 1);
-    aux[1] = '\0';
-    connectionData->windowSize = atoi(aux);
-
-    memcpy(aux, &input[5], 4);
-    aux[4] = '\0';
-    connectionData->fileSize = atoi(aux);
+    memcpy(connectionData, &input[0], 9);
 
     return connectionData;
 }
 
-struct Package *parseToPackage(char input[256])
+struct Package *parseToPackage(struct Package *networkPackage)
 {
     struct Package *package = (struct Package *)malloc(sizeof(struct Package));
-    char aux[5];
 
-    // Destiny
-    memcpy(aux, &input[0], 4);
-    aux[4] = '\0';
-    package->destiny = atoi(aux);
-
-    // Source
-    memcpy(aux, &input[4], 4);
-    aux[4] = '\0';
-    package->source = atoi(aux);
-
-    // Type
-    memcpy(aux, &input[8], 1);
-    aux[1] = '\0';
-    package->type = atoi(aux);
-
-    // Sequency
-    memcpy(aux, &input[9], 1);
-    aux[1] = '\0';
-    package->sequency = atoi(aux);
-
-    // Size
-    memcpy(aux, &input[10], 2);
-    aux[2] = '\0';
-    package->size = atoi(aux);
-
-    // CRC
-    memcpy(aux, &input[12], 4);
-    aux[4] = '\0';
-    package->crc = atoi(aux);
-
-    // Data
-    memcpy(package->data, &input[16], 240);
+    package->destiny = networkPackage->destiny;
+    package->source = networkPackage->source;
+    package->type = networkPackage->type;
+    package->sequency = networkPackage->sequency;
+    package->size = networkPackage->size;
+    package->crc = networkPackage->crc;
+    memcpy(&package->data, &networkPackage->data, sizeof(package->data));
 
     return package;
 }

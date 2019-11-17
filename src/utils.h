@@ -7,7 +7,7 @@
 
 unsigned crc8x_fast(unsigned crc, void const *mem, size_t len);
 
-struct Package *parseToPackage(char input[256]);
+struct Package *parseToPackage(struct Package *networkPackage);
 struct ConnectionData *parseToConnectionData(char input[9]);
 
 #endif

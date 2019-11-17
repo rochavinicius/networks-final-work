@@ -1,0 +1,13 @@
+{
+    "files.associations": {
+        "array": "c",
+        "string_view": "c",
+        "functional": "c",
+        "tuple": "c",
+        "type_traits": "c",
+        "utility": "c",
+        "istream": "c",
+        "ostream": "c",
+        "initializer_list": "c"
+    }
+}

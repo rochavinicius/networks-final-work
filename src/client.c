@@ -23,23 +23,23 @@ struct ClientInfo *startClient()
     char hostBuffer[256];
     struct hostent *hostEntry;
 
-    printf("Starting client service...");
+    printf("Starting client service...\n");
 
     // Creating socket file descriptor
     if ((clientSocket = socket(AF_INET, SOCK_DGRAM, 0)) < 0)
     {
-        perror("Client socket creation failed.");
+        perror("Client socket creation failed.\n");
         exit(EXIT_FAILURE);
     }
 
-    printf("Client socket created.");
+    printf("Client socket created.\n");
 
     // Filling server information
     server_addr.sin_family = AF_INET; // IPv4
     server_addr.sin_addr.s_addr = inet_addr(SERVER_IP);
     server_addr.sin_port = htons(SERVER_PORT);
 
-    printf("Client started. Ready to send data...");
+    printf("Client started. Ready to send data...\n");
 
     clientInfo->socket = clientSocket;
     clientInfo->sockaddr = server_addr;
@@ -51,19 +51,24 @@ struct ClientInfo *startClient()
     return clientInfo;
 }
 
-char * getValidFile()
+char *getValidFile()
 {
     FILE *file;
-    char *fileName = (char *)malloc(256 * sizeof(char));
+    char *fileName = NULL;
+    size_t len = 0;
+    int read;
     bool isValidFile = false;
+
+    printf("Enter file name or path to send to server.\n");
+    printf("Type 'exit' to exit program.\n");
 
     while (!isValidFile)
     {
-        printf("Enter file name or path to send to server.\n");
-        printf("Type 'exit' to exit program.\n");
         printf("REDESI@file$ ");
 
-        fgets(fileName, sizeof(fileName), stdin);
+        read = getline(&fileName, &len, stdin);
+
+        fileName[read - 1] = '\0';
 
         if (strcmp(fileName, "exit") == 0)
             exit(0);
@@ -89,6 +94,7 @@ char * getValidFile()
 void executeStopAndWait(int fileSize, char fileName[], struct ClientInfo *clientInfo);
 void executeGoBackN(int fileSize, int windowSize, char fileName[]);
 
+//TODO maybe treat for wrong parameters
 void getCommandLineArgs(int args, char **argc, int *flowControl, int *windowSize)
 {
     int c;
@@ -96,15 +102,15 @@ void getCommandLineArgs(int args, char **argc, int *flowControl, int *windowSize
     {
         switch (c)
         {
-            case 't':
-                *flowControl = atoi(optarg);
-                break;
-            case 's':
-                *windowSize = atoi(optarg);
-                break;
+        case 't':
+            *flowControl = atoi(optarg);
+            break;
+        case 's':
+            *windowSize = atoi(optarg);
+            break;
         }
     }
-}   
+}
 
 // gcc utils.c client.c -o client
 // ./client -t {flowControl technique} -s {windowSize}
@@ -113,13 +119,14 @@ void main(int args, char **argc)
     int newSocket;
     char buffer[MAX_BUFFER_SIZE];
     long int fileSize;
-    int flowControl = 0;
-    int windowSize = 8;
+    int flowControl;
+    int windowSize;
+    int c = sizeof(struct sockaddr_in);
 
+    // Parse command line arguments required for client program
     getCommandLineArgs(args, argc, &flowControl, &windowSize);
 
-    exit(0);
-
+    // Start connection with server
     struct ClientInfo *clientInfo = startClient();
 
     while (1)
@@ -127,7 +134,7 @@ void main(int args, char **argc)
         FILE *file;
         char *fileName;
         bool isValidFile = false;
-        char inputData[MAX_BUFFER_SIZE];
+        struct Package buffer;
         ssize_t retSend;
         ssize_t retRecv;
         struct stat st;
@@ -139,7 +146,6 @@ void main(int args, char **argc)
         fileSize = st.st_size;
 
         // send package to stablish connection with server
-
         struct ConnectionData data;
         data.fileSize = fileSize;
         data.flowControl = flowControl;
@@ -157,6 +163,8 @@ void main(int args, char **argc)
         package.crc = 0;
         package.crc = crc8x_fast(CRC_POLYNOME, (const void *)&package, sizeof(struct Package));
 
+        printf("CRC calculated %d.\n", package.crc);
+
         retSend = sendto(clientInfo->socket, (const void *)&package, sizeof(struct Package),
                          0, (const struct sockaddr *)&clientInfo->sockaddr, sizeof(struct sockaddr));
 
@@ -166,17 +174,22 @@ void main(int args, char **argc)
             exit(EXIT_FAILURE);
         }
 
+        printf("Sent package to server.\n");
+
         // get confirmation ack from server
-        retRecv = recvfrom(clientInfo->socket, inputData, sizeof(inputData),
-                           MSG_WAITALL, (struct sockaddr *)&clientInfo->sockaddr,
-                           &clientInfo->socket);
+        retRecv = recvfrom(clientInfo->socket, (char *)&buffer, sizeof(buffer),
+                           0, (struct sockaddr *)&clientInfo->sockaddr,
+                           &c);
 
         if (retRecv <= 0)
         {
             perror("Error recvfrom <= 0\n");
+            exit(1);
         }
 
-        struct Package *ackPackage = parseToPackage(inputData);
+        printf("Received ack from server.\n");
+
+        struct Package *ackPackage = parseToPackage(&buffer);
 
         if (ackPackage->type != ACK_TYPE)
         {
@@ -189,20 +202,12 @@ void main(int args, char **argc)
         else
             executeGoBackN(fileSize, windowSize, fileName);
 
-        //TODO esperar ack final ou colocar dentro dos metodos
-
         free(fileName);
         free(ackPackage);
-        free(clientInfo);
-
-        close(clientInfo->socket);
-        fclose(file);
     }
 
     printf("Client socket connection closed. Finishing...");
 }
-
-//TODO use fread to read the file since it returns the number characters read from the file
 
 void executeStopAndWait(int fileSize, char fileName[], struct ClientInfo *clientInfo)
 {
@@ -211,15 +216,18 @@ void executeStopAndWait(int fileSize, char fileName[], struct ClientInfo *client
     int nrBytesRead;
     struct Package package;
     struct Package *ackPackage;
-    char inputData[MAX_BUFFER_SIZE];
+    struct Package buffer;
     int retSend;
     int retRecv;
     int sequency = 0;
     int incrementedSequency;
+    int c = sizeof(struct sockaddr_in);
 
     package.destiny = clientInfo->sockaddr.sin_addr.s_addr;
     package.source = inet_addr(clientInfo->clientIp);
     package.type = DATA_TYPE;
+
+    printf("Starting Stop and Wait protocol...\n");
 
     while (fileSize > 0)
     {
@@ -228,33 +236,49 @@ void executeStopAndWait(int fileSize, char fileName[], struct ClientInfo *client
 
         // read file and get the number of bytes read (in case the file ends)
         nrBytesRead = fread(dataBuffer, 1, sizeof(dataBuffer), file);
+        if (nrBytesRead < 0)
+        {
+            perror("Error reading file.\n");
+            exit(1);
+        }
+        printf("Read %d bytes from file.\n", nrBytesRead);
 
         // Set data, size, sequency and CRC
-        package.size = nrBytesRead;
         memcpy(package.data, dataBuffer, nrBytesRead);
+        package.size = nrBytesRead;
         package.sequency = sequency;
         package.crc = 0;
         package.crc = crc8x_fast(CRC_POLYNOME, &package, sizeof(package));
 
+        printf("Sending package to server.\n");
+        printf("Sending size %d\n", package.size);
+
         // send frame to server
         retSend = sendto(clientInfo->socket, (const void *)&package, sizeof(struct Package),
                          0, (const struct sockaddr *)&clientInfo->sockaddr, sizeof(struct sockaddr));
-        if (retSend <= 0)
+        if (retSend < 0)
         {
             perror("Error sending package in Stop and Wait.\n");
             exit(1);
         }
 
+        printf("Package sent to server.\n");
+
+        printf("Waiting for server ack.\n");
+
         // waits for ack form the server
-        retRecv = recvfrom(clientInfo->socket, inputData, sizeof(inputData),
-                           MSG_WAITALL, (struct sockaddr *)&clientInfo->sockaddr,
-                           &clientInfo->socket);
-        if (retRecv <= 0)
+        retRecv = recvfrom(clientInfo->socket, (char *)&buffer, sizeof(buffer),
+                           0, (struct sockaddr *)&clientInfo->sockaddr,
+                           &c);
+        if (retRecv < 0)
         {
             perror("Error recvfrom <= 0 Stop and Wait.\n");
+            exit(1);
         }
 
-        ackPackage = parseToPackage(inputData);
+        printf("Server ack received.\n");
+
+        ackPackage = parseToPackage(&buffer);
 
         if (ackPackage->type != ACK_TYPE)
         {
@@ -264,8 +288,11 @@ void executeStopAndWait(int fileSize, char fileName[], struct ClientInfo *client
 
         incrementedSequency = sequency + 1 > 1 ? 0 : 1;
 
+        printf("ACK SEQUENCY %d\n", ackPackage->sequency);
+
         while (ackPackage->sequency != incrementedSequency)
         {
+            printf("Entrei no loop\n");
             free(ackPackage);
 
             // Do data retransmission
@@ -273,25 +300,42 @@ void executeStopAndWait(int fileSize, char fileName[], struct ClientInfo *client
                              0, (const struct sockaddr *)&clientInfo->sockaddr, sizeof(struct sockaddr));
             if (retSend <= 0)
             {
-                perror("Error sending package in Stop and Wait.\n");
+                perror("Error sending package retransmission in Stop and Wait.\n");
                 exit(1);
             }
 
             // waits for ack form the server
-            retRecv = recvfrom(clientInfo->socket, inputData, sizeof(inputData),
-                               MSG_WAITALL, (struct sockaddr *)&clientInfo->sockaddr,
-                               &clientInfo->socket);
+            retRecv = recvfrom(clientInfo->socket, (char *)&buffer, sizeof(buffer),
+                               0, (struct sockaddr *)&clientInfo->sockaddr,
+                               &c);
             if (retRecv <= 0)
             {
                 perror("Error recvfrom <= 0 Stop and Wait.\n");
             }
 
-            ackPackage = parseToPackage(inputData);
+            ackPackage = parseToPackage(&buffer);
         }
 
-        sequency++;
+        free(ackPackage);
+        sequency = sequency == 0 ? 1 : 0;
+        fileSize -= nrBytesRead;
     }
 
+    printf("Waiting for terminating ACK.\n");
+
+    // Waits for the final ack
+    retRecv = recvfrom(clientInfo->socket, (char *)&buffer, sizeof(buffer),
+                       0, (struct sockaddr *)&clientInfo->sockaddr,
+                       &c);
+    if (retRecv <= 0)
+    {
+        perror("Error recvfrom for final ack. Stop and Wait.\n");
+        exit(1);
+    }
+
+    printf("Protocol finished.\n");
+
+    free(ackPackage);
     fclose(file);
 }
 
