@@ -98,7 +98,7 @@ void executeGoBackN(int fileSize, int windowSize, char fileName[]);
 void getCommandLineArgs(int args, char **argc, int *flowControl, int *windowSize)
 {
     int c;
-    while ((c = getopt(args, argc, "t:s:")) != -1)
+    while ((c = getopt(args, argc, "t:s:i:")) != -1)
     {
         switch (c)
         {
@@ -108,6 +108,10 @@ void getCommandLineArgs(int args, char **argc, int *flowControl, int *windowSize
         case 's':
             *windowSize = atoi(optarg);
             break;
+            //TODO adicionar parametro para ip do server
+        // case 'i':
+        //     ip = optarg;
+        //     break;
         }
     }
 }
@@ -292,7 +296,8 @@ void executeStopAndWait(int fileSize, char fileName[], struct ClientInfo *client
 
         while (ackPackage->sequency != incrementedSequency)
         {
-            printf("Entrei no loop\n");
+            printf("Sending frame retransmission to server.\n");
+
             free(ackPackage);
 
             // Do data retransmission
@@ -314,6 +319,11 @@ void executeStopAndWait(int fileSize, char fileName[], struct ClientInfo *client
             }
 
             ackPackage = parseToPackage(&buffer);
+            if (ackPackage->type != ACK_TYPE)
+            {
+                perror("Server response not acknoledge Stop and Wait.\n");
+                exit(1);
+            }
         }
 
         free(ackPackage);
@@ -335,7 +345,6 @@ void executeStopAndWait(int fileSize, char fileName[], struct ClientInfo *client
 
     printf("Protocol finished.\n");
 
-    free(ackPackage);
     fclose(file);
 }
 
