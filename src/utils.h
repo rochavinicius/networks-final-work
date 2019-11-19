@@ -5,7 +5,7 @@
 #include <string.h>
 #include "macros.h"
 
-unsigned crc8x_fast(unsigned crc, void const *mem, size_t len);
+unsigned int crc32b(unsigned char *message, unsigned int polynome);
 
 struct Package *parseToPackage(struct Package *networkPackage);
 struct ConnectionData *parseToConnectionData(char input[9]);

@@ -66,11 +66,12 @@ void main()
 
         // for connection stablishment package, do not use any flow control technique
         // just drop it case its with error
-        unsigned int crcRet = crc8x_fast(CRC_POLYNOME, &buffer, sizeof(buffer));
+        unsigned int crcRet = crc32b((unsigned char *)&buffer, CRC_POLYNOME);
 
         printf("CRC calculated for package: %d.\n", crcRet);
+        printf("CRC recebida: %d\n", buffer.crc);
 
-        if (crcRet != 0)
+        if (crcRet != buffer.crc)
             continue;
 
         // Parse main pakage
@@ -111,7 +112,7 @@ void main()
         ackPackage.type = 1;
         ackPackage.sequency = 0;
         ackPackage.crc = 0;
-        ackPackage.crc = crc8x_fast(CRC_POLYNOME, (const void *)&ackPackage, sizeof(ackPackage));
+        ackPackage.crc = crc32b((unsigned char *)&ackPackage, CRC_POLYNOME);
 
         printf("Sending ack to client...\n");
 
@@ -129,6 +130,11 @@ void main()
 
         free(connectionData);
         free(package);
+
+        printf("\n\n");
+        printf("File transmission finished.\n");
+        printf("Waiting for incomming connections...\n");
+        printf("\n\n");
     }
 
     close(newSocket);
@@ -188,10 +194,10 @@ void executeStopAndWait(int fileSize, struct ServerInfo *serverInfo, uint32_t de
         receivedPackage = parseToPackage(&buffer);
 
         // check for CRC
-        crc = crc8x_fast(CRC_POLYNOME, &buffer, receivedPackage->size);
+        crc = crc32b((unsigned char *)&buffer, CRC_POLYNOME);
 
         // bitflip, ask for retransmission
-        while (crc != 0)
+        while (crc != buffer.crc)
         {
             free(receivedPackage);
 
@@ -218,7 +224,7 @@ void executeStopAndWait(int fileSize, struct ServerInfo *serverInfo, uint32_t de
             receivedPackage = parseToPackage(&buffer);
 
             // check for CRC
-            crc = crc8x_fast(CRC_POLYNOME, &buffer, receivedPackage->size);
+            crc = crc32b((unsigned char *)&buffer, CRC_POLYNOME);
         }
 
         // write to file

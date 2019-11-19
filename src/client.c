@@ -94,26 +94,48 @@ char *getValidFile()
 void executeStopAndWait(int fileSize, char fileName[], struct ClientInfo *clientInfo);
 void executeGoBackN(int fileSize, int windowSize, char fileName[]);
 
-//TODO maybe treat for wrong parameters
-void getCommandLineArgs(int args, char **argc, int *flowControl, int *windowSize)
+void getCommandLineArgs(int args, char **argc, int *flowControl, int *windowSize, char ip[])
 {
-    int c;
-    while ((c = getopt(args, argc, "t:s:i:")) != -1)
+    int opt;
+    bool wFlag = false;
+    bool iFlag = false;
+
+    while ((opt = getopt(args, argc, ":t:ws:ip:")) != -1)
     {
-        switch (c)
+        switch (opt)
         {
         case 't':
             *flowControl = atoi(optarg);
             break;
+        case 'w':
+            wFlag = true;
+            break;
         case 's':
+            if (!wFlag)
+            {
+                printf("Wrong argument: -%c. The correct argument is -ws.\n", opt);
+                exit(0);
+            }
             *windowSize = atoi(optarg);
             break;
-            //TODO adicionar parametro para ip do server
-        // case 'i':
-        //     ip = optarg;
-        //     break;
+        case 'i':
+            iFlag = true;
+            break;
+        case 'p':
+            if (!iFlag)
+            {
+                printf("Wrong argument: -%c. The correct argument is -ip.\n", opt);
+                exit(0);
+            }
+            if (iFlag) memcpy(ip, optarg, 12);
+            break;
+        case '?':
+            printf("Unknown arguments: -%c\n", optopt);
+            exit(0);
         }
     }
+
+    ip[strlen(ip)] = '\0';
 }
 
 // gcc utils.c client.c -o client
@@ -125,10 +147,11 @@ void main(int args, char **argc)
     long int fileSize;
     int flowControl;
     int windowSize;
+    char ip[13];
     int c = sizeof(struct sockaddr_in);
 
     // Parse command line arguments required for client program
-    getCommandLineArgs(args, argc, &flowControl, &windowSize);
+    getCommandLineArgs(args, argc, &flowControl, &windowSize, ip);
 
     // Start connection with server
     struct ClientInfo *clientInfo = startClient();
@@ -165,7 +188,7 @@ void main(int args, char **argc)
         package.size = sizeof(struct ConnectionData);
         memcpy(package.data, &data, sizeof(struct ConnectionData));
         package.crc = 0;
-        package.crc = crc8x_fast(CRC_POLYNOME, (const void *)&package, sizeof(struct Package));
+        package.crc = crc32b((unsigned char *)&package, CRC_POLYNOME);
 
         printf("CRC calculated %d.\n", package.crc);
 
@@ -208,6 +231,10 @@ void main(int args, char **argc)
 
         free(fileName);
         free(ackPackage);
+
+        printf("\n\n");
+        printf("File transmission finished.\n");
+        printf("\n\n");
     }
 
     printf("Client socket connection closed. Finishing...");
@@ -252,7 +279,7 @@ void executeStopAndWait(int fileSize, char fileName[], struct ClientInfo *client
         package.size = nrBytesRead;
         package.sequency = sequency;
         package.crc = 0;
-        package.crc = crc8x_fast(CRC_POLYNOME, &package, sizeof(package));
+        package.crc = crc32b((unsigned char *)&package, CRC_POLYNOME);
 
         printf("Sending package to server.\n");
         printf("Sending size %d\n", package.size);
