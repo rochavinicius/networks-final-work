@@ -92,7 +92,7 @@ char *getValidFile()
 
 // function macros
 void executeStopAndWait(int fileSize, char fileName[], struct ClientInfo *clientInfo);
-void executeGoBackN(int fileSize, int windowSize, char fileName[]);
+void executeGoBackN(int fileSize, char fileName[], struct ClientInfo *clientInfo, int windowSize);
 
 void getCommandLineArgs(int args, char **argc, int *flowControl, int *windowSize, char ip[])
 {
@@ -232,7 +232,7 @@ void main(int args, char **argc)
         if (flowControl == 0)
             executeStopAndWait(fileSize, fileName, clientInfo);
         else
-            executeGoBackN(fileSize, windowSize, fileName);
+            executeGoBackN(fileSize, fileName, clientInfo, windowSize);
 
         free(fileName);
         free(ackPackage);
@@ -380,14 +380,13 @@ void executeStopAndWait(int fileSize, char fileName[], struct ClientInfo *client
     fclose(file);
 }
 
-// void executeGoBackN(int fileSize, int windowSize, char fileName[]){}
+//TODO comentar o codigo, arrumar os prints de log, c pa coloca algumas coisa em funcao
 void executeGoBackN(int fileSize, char fileName[], struct ClientInfo *clientInfo, int windowSize)
 {
     FILE *file = fopen(fileName, "r");
 
     char dataBuffer[240];
     int nrBytesRead;
-    struct Package *package;
     struct Package *ackPackage;
     struct Package buffer;
     struct Package *frames = (struct Package *)malloc(windowSize * sizeof(struct Package));
@@ -397,22 +396,18 @@ void executeGoBackN(int fileSize, char fileName[], struct ClientInfo *clientInfo
     int incrementedSequency;
     int c = sizeof(struct sockaddr_in);
     int i;
-
-    // package.destiny = clientInfo->sockaddr.sin_addr.s_addr;
-    // package.source = inet_addr(clientInfo->clientIp);
-    // package.type = DATA_TYPE;
+    bool backToBegin = false;
 
     printf("Waiting for terminating ACK.\n");
 
-    //Fazer a logica do fluxo
-    // ******************************************************************************************
-    // ******************************************************************************************
-    // ******************************************************************************************
-
     while (fileSize > 0)
     {
+        // Send all the window frames
         for (i = 0; i < windowSize; i++)
         {
+            if (fileSize <= 0)
+                break;
+
             // read file and get the number of bytes read (in case the file ends)
             nrBytesRead = fread(dataBuffer, 1, sizeof(dataBuffer), file);
             if (nrBytesRead < 0)
@@ -421,50 +416,30 @@ void executeGoBackN(int fileSize, char fileName[], struct ClientInfo *clientInfo
                 exit(1);
             }
 
+            fileSize -= nrBytesRead;
+
             // Populate Package
-            frames[i].destiny = clientInfo->sockaddr.sin_addr.s_addr;
-            frames[i].source = inet_addr(clientInfo->clientIp);
-            frames[i].type = DATA_TYPE;
+            frames[sequency].destiny = clientInfo->sockaddr.sin_addr.s_addr;
+            frames[sequency].source = inet_addr(clientInfo->clientIp);
+            frames[sequency].type = DATA_TYPE;
             memcpy(frames[i].data, dataBuffer, nrBytesRead);
-            frames[i].size = nrBytesRead;
-            frames[i].sequency = sequency;
-            frames[i].crc = 0;
-            frames[i].crc = crc32b((unsigned char *)&package, CRC_POLYNOME);
+            frames[sequency].size = nrBytesRead;
+            frames[sequency].sequency = sequency;
+            frames[sequency].crc = 0;
+            frames[sequency].crc = crc32b((unsigned char *)&frames[sequency], CRC_POLYNOME);
+
+            printf("Sending package to server.\n");
+
+            // Send package to server
+            retSend = sendto(clientInfo->socket, (const void *)&frames[i], sizeof(struct Package),
+                             0, (const struct sockaddr *)&clientInfo->sockaddr, sizeof(struct sockaddr));
+            if (retSend < 0)
+            {
+                perror("Error sending package in Stop and Wait.\n");
+                exit(1);
+            }
+            sequency = sequency == windowSize - 1 ? 0 : sequency++;
         }
-
-        // PAREI AKI
-
-        // read file and get the number of bytes read (in case the file ends)
-        nrBytesRead = fread(dataBuffer, 1, sizeof(dataBuffer), file);
-        if (nrBytesRead < 0)
-        {
-            perror("Error reading file.\n");
-            exit(1);
-        }
-        printf("Read %d bytes from file.\n", nrBytesRead);
-
-        // Set data, size, sequency and CRC
-        memcpy(package.data, dataBuffer, nrBytesRead);
-        package.size = nrBytesRead;
-        package.sequency = sequency;
-        package.crc = 0;
-        package.crc = crc32b((unsigned char *)&package, CRC_POLYNOME);
-
-        printf("Sending package to server.\n");
-        printf("Sending size %d\n", package.size);
-
-        // send frame to server
-        retSend = sendto(clientInfo->socket, (const void *)&package, sizeof(struct Package),
-                         0, (const struct sockaddr *)&clientInfo->sockaddr, sizeof(struct sockaddr));
-        if (retSend < 0)
-        {
-            perror("Error sending package in Stop and Wait.\n");
-            exit(1);
-        }
-
-        printf("Package sent to server.\n");
-
-        printf("Waiting for server ack.\n");
 
         // waits for ack form the server
         retRecv = recvfrom(clientInfo->socket, (char *)&buffer, sizeof(buffer),
@@ -476,33 +451,80 @@ void executeGoBackN(int fileSize, char fileName[], struct ClientInfo *clientInfo
             exit(1);
         }
 
-        printf("Server ack received.\n");
-
         ackPackage = parseToPackage(&buffer);
 
+        // basic validation for server response: it must be an ack
         if (ackPackage->type != ACK_TYPE)
         {
             perror("Server response not acknoledge Stop and Wait.\n");
             exit(1);
         }
 
-        incrementedSequency = sequency + 1 > 1 ? 0 : 1;
+        incrementedSequency = sequency == windowSize - 1 ? 0 : sequency++;
 
-        printf("ACK SEQUENCY %d\n", ackPackage->sequency);
-
-        while (ackPackage->sequency != incrementedSequency)
+        // server requesting frame retransmission
+        // send all the frames that were dropped from server
+        while (incrementedSequency != ackPackage->sequency)
         {
+            sequency = ackPackage->sequency;
+
             printf("Sending frame retransmission to server.\n");
 
             free(ackPackage);
 
-            // Do data retransmission
-            retSend = sendto(clientInfo->socket, (const void *)&package, sizeof(struct Package),
-                             0, (const struct sockaddr *)&clientInfo->sockaddr, sizeof(struct sockaddr));
-            if (retSend <= 0)
+            for (i = 0; i < windowSize; i++)
             {
-                perror("Error sending package retransmission in Stop and Wait.\n");
-                exit(1);
+                if (backToBegin)
+                {
+                    if (fileSize <= 0)
+                        break;
+
+                    // read file and get the number of bytes read (in case the file ends)
+                    nrBytesRead = fread(dataBuffer, 1, sizeof(dataBuffer), file);
+                    if (nrBytesRead < 0)
+                    {
+                        perror("Error reading file.\n");
+                        exit(1);
+                    }
+
+                    fileSize -= nrBytesRead;
+
+                    // Populate Package
+                    frames[sequency].destiny = clientInfo->sockaddr.sin_addr.s_addr;
+                    frames[sequency].source = inet_addr(clientInfo->clientIp);
+                    frames[sequency].type = DATA_TYPE;
+                    memcpy(frames[i].data, dataBuffer, nrBytesRead);
+                    frames[sequency].size = nrBytesRead;
+                    frames[sequency].sequency = sequency;
+                    frames[sequency].crc = 0;
+                    frames[sequency].crc = crc32b((unsigned char *)&frames[sequency], CRC_POLYNOME);
+
+                    retSend = sendto(clientInfo->socket, (const void *)&frames[sequency], sizeof(struct Package),
+                                     0, (const struct sockaddr *)&clientInfo->sockaddr, sizeof(struct sockaddr));
+                    if (retSend <= 0)
+                    {
+                        perror("Error sending package retransmission in Stop and Wait.\n");
+                        exit(1);
+                    }
+                }
+                else
+                {
+                    // Do data retransmission
+                    retSend = sendto(clientInfo->socket, (const void *)&frames[sequency], sizeof(struct Package),
+                                     0, (const struct sockaddr *)&clientInfo->sockaddr, sizeof(struct sockaddr));
+                    if (retSend <= 0)
+                    {
+                        perror("Error sending package retransmission in Stop and Wait.\n");
+                        exit(1);
+                    }
+                }
+
+                sequency++;
+                if (sequency == windowSize - 1)
+                {
+                    sequency = 0;
+                    backToBegin = true;
+                }
             }
 
             // waits for ack form the server
@@ -522,13 +544,9 @@ void executeGoBackN(int fileSize, char fileName[], struct ClientInfo *clientInfo
             }
         }
 
+        // No frames with errors
         free(ackPackage);
-        sequency = sequency == 0 ? 1 : 0;
-        fileSize -= nrBytesRead;
     }
-    // ******************************************************************************************
-    // ******************************************************************************************
-    // ******************************************************************************************
 
     // Waits for the final ack
     retRecv = recvfrom(clientInfo->socket, (char *)&buffer, sizeof(buffer),

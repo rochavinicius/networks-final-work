@@ -281,6 +281,7 @@ void executeStopAndWait(int fileSize, struct ServerInfo *serverInfo, uint32_t de
     fclose(file);
 }
 
+//TODO fazer esse cara baseado no client
 void executeGoBackN(int size, int windowSize)
 {
     FILE *file;
