@@ -229,7 +229,7 @@ void executeStopAndWait(int fileSize, struct ServerInfo *serverInfo, uint32_t de
 
         // write to file
         fwrite(receivedPackage->data, sizeof(receivedPackage->data[0]),
-           receivedPackage->size, file);
+               receivedPackage->size, file);
 
         // decrement file size
         fileSize -= receivedPackage->size;

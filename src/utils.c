@@ -9,7 +9,8 @@ unsigned int crc32b(unsigned char *message, unsigned int polynome)
     unsigned int byte, crc, mask;
 
     i = 0;
-    crc = polynome;
+    // crc = 0xFFFFFFFF;
+    crc = 0x0;
     while (message[i] != 0)
     {
         byte = message[i]; // Get next byte.
@@ -17,12 +18,14 @@ unsigned int crc32b(unsigned char *message, unsigned int polynome)
         for (j = 7; j >= 0; j--)
         { // Do eight times.
             mask = -(crc & 1);
-            crc = (crc >> 1) ^ (0xEDB88320 & mask);
+            crc = (crc >> 1) ^ (polynome & mask);
         }
         i = i + 1;
     }
     return crc;
 }
+
+//TODO criar funcao pra converter a struct Package pra network byte, fazer campo a campo
 
 struct ConnectionData *parseToConnectionData(char input[])
 {

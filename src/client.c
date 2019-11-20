@@ -14,7 +14,7 @@
 #include "macros.h"
 #include "utils.h"
 
-struct ClientInfo *startClient()
+struct ClientInfo *startClient(char ip[])
 {
     struct ClientInfo *clientInfo = (struct ClientInfo *)malloc(sizeof(struct ClientInfo));
     int clientSocket;
@@ -36,7 +36,7 @@ struct ClientInfo *startClient()
 
     // Filling server information
     server_addr.sin_family = AF_INET; // IPv4
-    server_addr.sin_addr.s_addr = inet_addr(SERVER_IP);
+    server_addr.sin_addr.s_addr = inet_addr(ip);
     server_addr.sin_port = htons(SERVER_PORT);
 
     printf("Client started. Ready to send data...\n");
@@ -99,6 +99,7 @@ void getCommandLineArgs(int args, char **argc, int *flowControl, int *windowSize
     int opt;
     bool wFlag = false;
     bool iFlag = false;
+    bool ipInformed = false;
 
     while ((opt = getopt(args, argc, ":t:ws:ip:")) != -1)
     {
@@ -127,7 +128,8 @@ void getCommandLineArgs(int args, char **argc, int *flowControl, int *windowSize
                 printf("Wrong argument: -%c. The correct argument is -ip.\n", opt);
                 exit(0);
             }
-            if (iFlag) memcpy(ip, optarg, 12);
+            memcpy(ip, optarg, 12);
+            ipInformed = true;
             break;
         case '?':
             printf("Unknown arguments: -%c\n", optopt);
@@ -135,11 +137,14 @@ void getCommandLineArgs(int args, char **argc, int *flowControl, int *windowSize
         }
     }
 
+    if (!ipInformed)
+        memcpy(ip, SERVER_IP, sizeof(SERVER_IP));
     ip[strlen(ip)] = '\0';
 }
 
 // gcc utils.c client.c -o client
-// ./client -t {flowControl technique} -s {windowSize}
+// ./ client -t 0 -ws 5 -ip 127.0.0.1
+// ./client -t {flowControl technique} -ws {windowSize} -ip {server ip}
 void main(int args, char **argc)
 {
     int newSocket;
@@ -154,7 +159,7 @@ void main(int args, char **argc)
     getCommandLineArgs(args, argc, &flowControl, &windowSize, ip);
 
     // Start connection with server
-    struct ClientInfo *clientInfo = startClient();
+    struct ClientInfo *clientInfo = startClient(ip);
 
     while (1)
     {
@@ -375,6 +380,167 @@ void executeStopAndWait(int fileSize, char fileName[], struct ClientInfo *client
     fclose(file);
 }
 
-void executeGoBackN(int fileSize, int windowSize, char fileName[])
+// void executeGoBackN(int fileSize, int windowSize, char fileName[]){}
+void executeGoBackN(int fileSize, char fileName[], struct ClientInfo *clientInfo, int windowSize)
 {
+    FILE *file = fopen(fileName, "r");
+
+    char dataBuffer[240];
+    int nrBytesRead;
+    struct Package *package;
+    struct Package *ackPackage;
+    struct Package buffer;
+    struct Package *frames = (struct Package *)malloc(windowSize * sizeof(struct Package));
+    int retSend;
+    int retRecv;
+    int sequency = 0;
+    int incrementedSequency;
+    int c = sizeof(struct sockaddr_in);
+    int i;
+
+    // package.destiny = clientInfo->sockaddr.sin_addr.s_addr;
+    // package.source = inet_addr(clientInfo->clientIp);
+    // package.type = DATA_TYPE;
+
+    printf("Waiting for terminating ACK.\n");
+
+    //Fazer a logica do fluxo
+    // ******************************************************************************************
+    // ******************************************************************************************
+    // ******************************************************************************************
+
+    while (fileSize > 0)
+    {
+        for (i = 0; i < windowSize; i++)
+        {
+            // read file and get the number of bytes read (in case the file ends)
+            nrBytesRead = fread(dataBuffer, 1, sizeof(dataBuffer), file);
+            if (nrBytesRead < 0)
+            {
+                perror("Error reading file.\n");
+                exit(1);
+            }
+
+            // Populate Package
+            frames[i].destiny = clientInfo->sockaddr.sin_addr.s_addr;
+            frames[i].source = inet_addr(clientInfo->clientIp);
+            frames[i].type = DATA_TYPE;
+            memcpy(frames[i].data, dataBuffer, nrBytesRead);
+            frames[i].size = nrBytesRead;
+            frames[i].sequency = sequency;
+            frames[i].crc = 0;
+            frames[i].crc = crc32b((unsigned char *)&package, CRC_POLYNOME);
+        }
+
+        // PAREI AKI
+
+        // read file and get the number of bytes read (in case the file ends)
+        nrBytesRead = fread(dataBuffer, 1, sizeof(dataBuffer), file);
+        if (nrBytesRead < 0)
+        {
+            perror("Error reading file.\n");
+            exit(1);
+        }
+        printf("Read %d bytes from file.\n", nrBytesRead);
+
+        // Set data, size, sequency and CRC
+        memcpy(package.data, dataBuffer, nrBytesRead);
+        package.size = nrBytesRead;
+        package.sequency = sequency;
+        package.crc = 0;
+        package.crc = crc32b((unsigned char *)&package, CRC_POLYNOME);
+
+        printf("Sending package to server.\n");
+        printf("Sending size %d\n", package.size);
+
+        // send frame to server
+        retSend = sendto(clientInfo->socket, (const void *)&package, sizeof(struct Package),
+                         0, (const struct sockaddr *)&clientInfo->sockaddr, sizeof(struct sockaddr));
+        if (retSend < 0)
+        {
+            perror("Error sending package in Stop and Wait.\n");
+            exit(1);
+        }
+
+        printf("Package sent to server.\n");
+
+        printf("Waiting for server ack.\n");
+
+        // waits for ack form the server
+        retRecv = recvfrom(clientInfo->socket, (char *)&buffer, sizeof(buffer),
+                           0, (struct sockaddr *)&clientInfo->sockaddr,
+                           &c);
+        if (retRecv < 0)
+        {
+            perror("Error recvfrom <= 0 Stop and Wait.\n");
+            exit(1);
+        }
+
+        printf("Server ack received.\n");
+
+        ackPackage = parseToPackage(&buffer);
+
+        if (ackPackage->type != ACK_TYPE)
+        {
+            perror("Server response not acknoledge Stop and Wait.\n");
+            exit(1);
+        }
+
+        incrementedSequency = sequency + 1 > 1 ? 0 : 1;
+
+        printf("ACK SEQUENCY %d\n", ackPackage->sequency);
+
+        while (ackPackage->sequency != incrementedSequency)
+        {
+            printf("Sending frame retransmission to server.\n");
+
+            free(ackPackage);
+
+            // Do data retransmission
+            retSend = sendto(clientInfo->socket, (const void *)&package, sizeof(struct Package),
+                             0, (const struct sockaddr *)&clientInfo->sockaddr, sizeof(struct sockaddr));
+            if (retSend <= 0)
+            {
+                perror("Error sending package retransmission in Stop and Wait.\n");
+                exit(1);
+            }
+
+            // waits for ack form the server
+            retRecv = recvfrom(clientInfo->socket, (char *)&buffer, sizeof(buffer),
+                               0, (struct sockaddr *)&clientInfo->sockaddr,
+                               &c);
+            if (retRecv <= 0)
+            {
+                perror("Error recvfrom <= 0 Stop and Wait.\n");
+            }
+
+            ackPackage = parseToPackage(&buffer);
+            if (ackPackage->type != ACK_TYPE)
+            {
+                perror("Server response not acknoledge Stop and Wait.\n");
+                exit(1);
+            }
+        }
+
+        free(ackPackage);
+        sequency = sequency == 0 ? 1 : 0;
+        fileSize -= nrBytesRead;
+    }
+    // ******************************************************************************************
+    // ******************************************************************************************
+    // ******************************************************************************************
+
+    // Waits for the final ack
+    retRecv = recvfrom(clientInfo->socket, (char *)&buffer, sizeof(buffer),
+                       0, (struct sockaddr *)&clientInfo->sockaddr,
+                       &c);
+    if (retRecv <= 0)
+    {
+        perror("Error recvfrom for final ack. Stop and Wait.\n");
+        exit(1);
+    }
+
+    printf("Protocol finished.\n");
+
+    fclose(file);
 }
