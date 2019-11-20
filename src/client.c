@@ -14,7 +14,7 @@
 #include "macros.h"
 #include "utils.h"
 
-struct ClientInfo *startClient(char ip[])
+struct ClientInfo *startClient(char ip[], int port)
 {
     struct ClientInfo *clientInfo = (struct ClientInfo *)malloc(sizeof(struct ClientInfo));
     int clientSocket;
@@ -37,7 +37,7 @@ struct ClientInfo *startClient(char ip[])
     // Filling server information
     server_addr.sin_family = AF_INET; // IPv4
     server_addr.sin_addr.s_addr = inet_addr(ip);
-    server_addr.sin_port = htons(SERVER_PORT);
+    server_addr.sin_port = htons(port);
 
     printf("Client started. Ready to send data...\n");
 
@@ -94,6 +94,7 @@ char *getValidFile()
 void executeStopAndWait(int fileSize, char fileName[], struct ClientInfo *clientInfo);
 void executeGoBackN(int fileSize, char fileName[], struct ClientInfo *clientInfo, int windowSize);
 
+//TODO adicionar o parametro para o server PORT
 void getCommandLineArgs(int args, char **argc, int *flowControl, int *windowSize, char ip[])
 {
     int opt;
@@ -101,11 +102,11 @@ void getCommandLineArgs(int args, char **argc, int *flowControl, int *windowSize
     bool iFlag = false;
     bool ipInformed = false;
 
-    while ((opt = getopt(args, argc, ":t:ws:ip:")) != -1)
+    while ((opt = getopt(args, argc, ":f:ws:ip:")) != -1)
     {
         switch (opt)
         {
-        case 't':
+        case 'f':
             *flowControl = atoi(optarg);
             break;
         case 'w':
@@ -115,7 +116,7 @@ void getCommandLineArgs(int args, char **argc, int *flowControl, int *windowSize
             if (!wFlag)
             {
                 printf("Wrong argument: -%c. The correct argument is -ws.\n", opt);
-                exit(0);
+                exit(1);
             }
             *windowSize = atoi(optarg);
             break;
@@ -126,14 +127,14 @@ void getCommandLineArgs(int args, char **argc, int *flowControl, int *windowSize
             if (!iFlag)
             {
                 printf("Wrong argument: -%c. The correct argument is -ip.\n", opt);
-                exit(0);
+                exit(1);
             }
             memcpy(ip, optarg, 12);
             ipInformed = true;
             break;
         case '?':
             printf("Unknown arguments: -%c\n", optopt);
-            exit(0);
+            exit(1);
         }
     }
 
@@ -143,8 +144,8 @@ void getCommandLineArgs(int args, char **argc, int *flowControl, int *windowSize
 }
 
 // gcc utils.c client.c -o client
-// ./ client -t 0 -ws 5 -ip 127.0.0.1
-// ./client -t {flowControl technique} -ws {windowSize} -ip {server ip}
+// ./ client -f 0 -ws 5 -ip 127.0.0.1
+// ./client -f {flowControl} -ws {windowSize} -ip {server ip}
 void main(int args, char **argc)
 {
     int newSocket;
@@ -159,7 +160,7 @@ void main(int args, char **argc)
     getCommandLineArgs(args, argc, &flowControl, &windowSize, ip);
 
     // Start connection with server
-    struct ClientInfo *clientInfo = startClient(ip);
+    struct ClientInfo *clientInfo = startClient(ip, SERVER_PORT);
 
     while (1)
     {
@@ -197,6 +198,8 @@ void main(int args, char **argc)
 
         printf("CRC calculated %d.\n", package.crc);
 
+        parsePackageToNetwork(&package);
+
         retSend = sendto(clientInfo->socket, (const void *)&package, sizeof(struct Package),
                          0, (const struct sockaddr *)&clientInfo->sockaddr, sizeof(struct sockaddr));
 
@@ -218,6 +221,8 @@ void main(int args, char **argc)
             perror("Error recvfrom <= 0\n");
             exit(1);
         }
+
+        parseNetworkToPackage(&buffer);
 
         printf("Received ack from server.\n");
 
@@ -286,6 +291,8 @@ void executeStopAndWait(int fileSize, char fileName[], struct ClientInfo *client
         package.crc = 0;
         package.crc = crc32b((unsigned char *)&package, CRC_POLYNOME);
 
+        parsePackageToNetwork(&package);
+
         printf("Sending package to server.\n");
         printf("Sending size %d\n", package.size);
 
@@ -311,6 +318,8 @@ void executeStopAndWait(int fileSize, char fileName[], struct ClientInfo *client
             perror("Error recvfrom <= 0 Stop and Wait.\n");
             exit(1);
         }
+
+        parseNetworkToPackage(&buffer);
 
         printf("Server ack received.\n");
 
@@ -349,6 +358,8 @@ void executeStopAndWait(int fileSize, char fileName[], struct ClientInfo *client
             {
                 perror("Error recvfrom <= 0 Stop and Wait.\n");
             }
+
+            parseNetworkToPackage(&buffer);
 
             ackPackage = parseToPackage(&buffer);
             if (ackPackage->type != ACK_TYPE)
@@ -428,6 +439,8 @@ void executeGoBackN(int fileSize, char fileName[], struct ClientInfo *clientInfo
             frames[sequency].crc = 0;
             frames[sequency].crc = crc32b((unsigned char *)&frames[sequency], CRC_POLYNOME);
 
+            parsePackageToNetwork(&frames[sequency]);
+
             printf("Sending package to server.\n");
 
             // Send package to server
@@ -450,6 +463,8 @@ void executeGoBackN(int fileSize, char fileName[], struct ClientInfo *clientInfo
             perror("Error recvfrom <= 0 Stop and Wait.\n");
             exit(1);
         }
+
+        parseNetworkToPackage(&buffer);
 
         ackPackage = parseToPackage(&buffer);
 
@@ -499,6 +514,8 @@ void executeGoBackN(int fileSize, char fileName[], struct ClientInfo *clientInfo
                     frames[sequency].crc = 0;
                     frames[sequency].crc = crc32b((unsigned char *)&frames[sequency], CRC_POLYNOME);
 
+                    parsePackageToNetwork(&frames[sequency]);
+
                     retSend = sendto(clientInfo->socket, (const void *)&frames[sequency], sizeof(struct Package),
                                      0, (const struct sockaddr *)&clientInfo->sockaddr, sizeof(struct sockaddr));
                     if (retSend <= 0)
@@ -535,6 +552,8 @@ void executeGoBackN(int fileSize, char fileName[], struct ClientInfo *clientInfo
             {
                 perror("Error recvfrom <= 0 Stop and Wait.\n");
             }
+
+            parseNetworkToPackage(&buffer);
 
             ackPackage = parseToPackage(&buffer);
             if (ackPackage->type != ACK_TYPE)

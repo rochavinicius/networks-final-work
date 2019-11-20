@@ -7,6 +7,9 @@
 
 unsigned int crc32b(unsigned char *message, unsigned int polynome);
 
+void parsePackageToNetwork(struct Package *package);
+void parseNetworkToPackage(struct Package *package);
+
 struct Package *parseToPackage(struct Package *networkPackage);
 struct ConnectionData *parseToConnectionData(char input[9]);
 

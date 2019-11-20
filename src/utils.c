@@ -25,7 +25,21 @@ unsigned int crc32b(unsigned char *message, unsigned int polynome)
     return crc;
 }
 
-//TODO criar funcao pra converter a struct Package pra network byte, fazer campo a campo
+void parsePackageToNetwork(struct Package *package)
+{
+    package->destiny = htonl(package->destiny);
+    package->source = htonl(package->source);
+    package->size = htons(package->size);
+    package->crc = htonl(package->crc);
+}
+
+void parseNetworkToPackage(struct Package *package)
+{
+    package->destiny = ntohl(package->destiny);
+    package->source = htonl(package->source);
+    package->size = ntohs(package->size);
+    package->crc = ntohl(package->crc);
+}
 
 struct ConnectionData *parseToConnectionData(char input[])
 {
@@ -35,6 +49,7 @@ struct ConnectionData *parseToConnectionData(char input[])
     return connectionData;
 }
 
+// TODO verificar se eh msm necessario alocar um novo ao inves de alterar o recebido
 struct Package *parseToPackage(struct Package *networkPackage)
 {
     struct Package *package = (struct Package *)malloc(sizeof(struct Package));

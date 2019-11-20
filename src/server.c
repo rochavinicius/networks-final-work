@@ -64,6 +64,8 @@ void main()
 
         // ******************* INITIAL PACKAGE *******************
 
+        parseNetworkToPackage(&buffer);
+
         // for connection stablishment package, do not use any flow control technique
         // just drop it case its with error
         unsigned int crcRet = crc32b((unsigned char *)&buffer, CRC_POLYNOME);
@@ -114,6 +116,8 @@ void main()
         ackPackage.crc = 0;
         ackPackage.crc = crc32b((unsigned char *)&ackPackage, CRC_POLYNOME);
 
+        parsePackageToNetwork(&ackPackage);
+
         printf("Sending ack to client...\n");
 
         // send ACK package
@@ -160,9 +164,6 @@ void executeStopAndWait(int fileSize, struct ServerInfo *serverInfo, uint32_t de
     int sequency = 0;
     unsigned int crc;
 
-    package.destiny = destiny;
-    package.source = source;
-
     printf("Starting Stop and Wait protocol...\n");
 
     printf("received file size %d\n", fileSize);
@@ -189,6 +190,8 @@ void executeStopAndWait(int fileSize, struct ServerInfo *serverInfo, uint32_t de
             exit(1);
         }
 
+        parseNetworkToPackage(&buffer);
+
         printf("Received package from client.\n");
 
         receivedPackage = parseToPackage(&buffer);
@@ -201,8 +204,12 @@ void executeStopAndWait(int fileSize, struct ServerInfo *serverInfo, uint32_t de
         {
             free(receivedPackage);
 
+            package.destiny = destiny;
+            package.source = source;
             package.type = ACK_TYPE;
             package.sequency = sequency;
+
+            parsePackageToNetwork(&package);
 
             retSend = sendto(serverInfo->socket, (const void *)&package, sizeof(package), 0,
                              (const struct sockaddr *)&serverInfo->clientaddr,
@@ -220,6 +227,8 @@ void executeStopAndWait(int fileSize, struct ServerInfo *serverInfo, uint32_t de
                 perror("Error getting package from client. Stop and Wait\n");
                 exit(1);
             }
+
+            parseNetworkToPackage(&buffer);
 
             receivedPackage = parseToPackage(&buffer);
 
@@ -240,8 +249,12 @@ void executeStopAndWait(int fileSize, struct ServerInfo *serverInfo, uint32_t de
         if (sequency > 1)
             sequency = 0;
 
+        package.destiny = destiny;
+        package.source = source;
         package.sequency = sequency;
         package.type = ACK_TYPE;
+
+        parsePackageToNetwork(&package);
 
         printf("Requesting next frame to be transmitted.\n");
 
@@ -262,7 +275,13 @@ void executeStopAndWait(int fileSize, struct ServerInfo *serverInfo, uint32_t de
 
     if (sequency > 1)
         sequency = 0;
+
+    package.destiny = destiny;
+    package.source = source;
     package.sequency = sequency;
+    package.type = ACK_TYPE;
+
+    parsePackageToNetwork(&package);
 
     printf("Sending final ack for terminating.\n");
 
