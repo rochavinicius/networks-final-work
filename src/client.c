@@ -91,8 +91,8 @@ char *getValidFile()
 }
 
 // function macros
-void executeStopAndWait(int fileSize, char fileName[], struct ClientInfo *clientInfo);
-void executeGoBackN(int fileSize, char fileName[], struct ClientInfo *clientInfo, int windowSize);
+// void executeStopAndWait(int fileSize, char fileName[], struct ClientInfo *clientInfo);
+// void executeGoBackN(int fileSize, char fileName[], struct ClientInfo *clientInfo, int windowSize);
 
 //TODO adicionar o parametro para o server PORT
 void getCommandLineArgs(int args, char **argc, int *flowControl, int *windowSize, char ip[])
@@ -144,7 +144,7 @@ void getCommandLineArgs(int args, char **argc, int *flowControl, int *windowSize
 }
 
 // gcc utils.c client.c -o client
-// ./ client -f 0 -ws 5 -ip 127.0.0.1
+// ./client -f 0 -ws 5 -ip 127.0.0.1
 // ./client -f {flowControl} -ws {windowSize} -ip {server ip}
 void main(int args, char **argc)
 {
@@ -226,7 +226,7 @@ void main(int args, char **argc)
 
         printf("Received ack from server.\n");
 
-        struct Package *ackPackage = parseToPackage(&buffer);
+        struct Package *ackPackage = &buffer;
 
         if (ackPackage->type != ACK_TYPE)
         {
@@ -235,12 +235,12 @@ void main(int args, char **argc)
         }
 
         if (flowControl == 0)
-            executeStopAndWait(fileSize, fileName, clientInfo);
+            clientStopAndWait(fileSize, fileName, clientInfo);
         else
-            executeGoBackN(fileSize, fileName, clientInfo, windowSize);
+            clientGoBackN(fileSize, fileName, clientInfo, windowSize);
 
         free(fileName);
-        free(ackPackage);
+        // free(ackPackage);
 
         printf("\n\n");
         printf("File transmission finished.\n");
@@ -250,7 +250,7 @@ void main(int args, char **argc)
     printf("Client socket connection closed. Finishing...");
 }
 
-void executeStopAndWait(int fileSize, char fileName[], struct ClientInfo *clientInfo)
+/*void executeStopAndWait(int fileSize, char fileName[], struct ClientInfo *clientInfo)
 {
     FILE *file = fopen(fileName, "r");
     char dataBuffer[240];
@@ -323,7 +323,7 @@ void executeStopAndWait(int fileSize, char fileName[], struct ClientInfo *client
 
         printf("Server ack received.\n");
 
-        ackPackage = parseToPackage(&buffer);
+        ackPackage = &buffer;
 
         if (ackPackage->type != ACK_TYPE)
         {
@@ -339,7 +339,7 @@ void executeStopAndWait(int fileSize, char fileName[], struct ClientInfo *client
         {
             printf("Sending frame retransmission to server.\n");
 
-            free(ackPackage);
+            // free(ackPackage);
 
             // Do data retransmission
             retSend = sendto(clientInfo->socket, (const void *)&package, sizeof(struct Package),
@@ -361,7 +361,7 @@ void executeStopAndWait(int fileSize, char fileName[], struct ClientInfo *client
 
             parseNetworkToPackage(&buffer);
 
-            ackPackage = parseToPackage(&buffer);
+            ackPackage = &buffer;
             if (ackPackage->type != ACK_TYPE)
             {
                 perror("Server response not acknoledge Stop and Wait.\n");
@@ -369,7 +369,7 @@ void executeStopAndWait(int fileSize, char fileName[], struct ClientInfo *client
             }
         }
 
-        free(ackPackage);
+        // free(ackPackage);
         sequency = sequency == 0 ? 1 : 0;
         fileSize -= nrBytesRead;
     }
@@ -433,18 +433,20 @@ void executeGoBackN(int fileSize, char fileName[], struct ClientInfo *clientInfo
             frames[sequency].destiny = clientInfo->sockaddr.sin_addr.s_addr;
             frames[sequency].source = inet_addr(clientInfo->clientIp);
             frames[sequency].type = DATA_TYPE;
-            memcpy(frames[i].data, dataBuffer, nrBytesRead);
+            memcpy(frames[sequency].data, dataBuffer, nrBytesRead);
             frames[sequency].size = nrBytesRead;
             frames[sequency].sequency = sequency;
             frames[sequency].crc = 0;
             frames[sequency].crc = crc32b((unsigned char *)&frames[sequency], CRC_POLYNOME);
+
+            printf("CRC calculated: %d\n", frames[sequency].crc);
 
             parsePackageToNetwork(&frames[sequency]);
 
             printf("Sending package to server.\n");
 
             // Send package to server
-            retSend = sendto(clientInfo->socket, (const void *)&frames[i], sizeof(struct Package),
+            retSend = sendto(clientInfo->socket, (const void *)&frames[sequency], sizeof(struct Package),
                              0, (const struct sockaddr *)&clientInfo->sockaddr, sizeof(struct sockaddr));
             if (retSend < 0)
             {
@@ -466,7 +468,7 @@ void executeGoBackN(int fileSize, char fileName[], struct ClientInfo *clientInfo
 
         parseNetworkToPackage(&buffer);
 
-        ackPackage = parseToPackage(&buffer);
+        ackPackage = &buffer;
 
         // basic validation for server response: it must be an ack
         if (ackPackage->type != ACK_TYPE)
@@ -474,6 +476,8 @@ void executeGoBackN(int fileSize, char fileName[], struct ClientInfo *clientInfo
             perror("Server response not acknoledge Stop and Wait.\n");
             exit(1);
         }
+
+        printf("ACK SEQUENCY %d\n", ackPackage->sequency);
 
         incrementedSequency = sequency == windowSize - 1 ? 0 : sequency++;
 
@@ -484,8 +488,6 @@ void executeGoBackN(int fileSize, char fileName[], struct ClientInfo *clientInfo
             sequency = ackPackage->sequency;
 
             printf("Sending frame retransmission to server.\n");
-
-            free(ackPackage);
 
             for (i = 0; i < windowSize; i++)
             {
@@ -508,7 +510,7 @@ void executeGoBackN(int fileSize, char fileName[], struct ClientInfo *clientInfo
                     frames[sequency].destiny = clientInfo->sockaddr.sin_addr.s_addr;
                     frames[sequency].source = inet_addr(clientInfo->clientIp);
                     frames[sequency].type = DATA_TYPE;
-                    memcpy(frames[i].data, dataBuffer, nrBytesRead);
+                    memcpy(frames[sequency].data, dataBuffer, nrBytesRead);
                     frames[sequency].size = nrBytesRead;
                     frames[sequency].sequency = sequency;
                     frames[sequency].crc = 0;
@@ -555,7 +557,7 @@ void executeGoBackN(int fileSize, char fileName[], struct ClientInfo *clientInfo
 
             parseNetworkToPackage(&buffer);
 
-            ackPackage = parseToPackage(&buffer);
+            ackPackage = &buffer;
             if (ackPackage->type != ACK_TYPE)
             {
                 perror("Server response not acknoledge Stop and Wait.\n");
@@ -564,8 +566,9 @@ void executeGoBackN(int fileSize, char fileName[], struct ClientInfo *clientInfo
         }
 
         // No frames with errors
-        free(ackPackage);
     }
+
+    printf("Waiting for terminating ACK.\n");
 
     // Waits for the final ack
     retRecv = recvfrom(clientInfo->socket, (char *)&buffer, sizeof(buffer),
@@ -580,4 +583,4 @@ void executeGoBackN(int fileSize, char fileName[], struct ClientInfo *clientInfo
     printf("Protocol finished.\n");
 
     fclose(file);
-}
+}*/

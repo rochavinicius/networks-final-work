@@ -44,8 +44,8 @@ struct ServerInfo *startServer()
     return si;
 }
 
-void executeStopAndWait(int fileSize, struct ServerInfo *serverInfo, uint32_t destiny, uint32_t source);
-void executeGoBackN(int size, int windowSize);
+// void executeStopAndWait(int fileSize, struct ServerInfo *serverInfo, uint32_t destiny, uint32_t source);
+// void executeGoBackN(int fileSize, int windowSize, struct ServerInfo *serverInfo, uint32_t destiny, uint32_t source);
 
 // gcc utils.c server.c -o server
 // ./server
@@ -77,14 +77,13 @@ void main()
             continue;
 
         // Parse main pakage
-        struct Package *package = parseToPackage(&buffer);
+        struct Package *package = &buffer;
 
         // wrong connection stablishment package
         if (package->size < 1 || package->size > 16 || package->type != CONNECTION_TYPE)
         {
             printf("Wrong package size or type.\n");
             printf("size: %d   type %d\n", package->size, package->type);
-            free(package);
             continue;
         }
 
@@ -128,12 +127,11 @@ void main()
         printf("Sent ack response to client.\n");
 
         if (connectionData->flowControl == 0)
-            executeStopAndWait(connectionData->fileSize, serverInfo, package->destiny, package->size);
+            serverStopAndWait(connectionData->fileSize, serverInfo, package->destiny, package->size);
         else
-            executeGoBackN(connectionData->fileSize, connectionData->windowSize);
+            serverGoBackN(connectionData->fileSize, connectionData->windowSize, serverInfo, package->destiny, package->source);
 
         free(connectionData);
-        free(package);
 
         printf("\n\n");
         printf("File transmission finished.\n");
@@ -152,7 +150,7 @@ void main()
     }
 }
 
-void executeStopAndWait(int fileSize, struct ServerInfo *serverInfo, uint32_t destiny, uint32_t source)
+/*void executeStopAndWait(int fileSize, struct ServerInfo *serverInfo, uint32_t destiny, uint32_t source)
 {
     FILE *file;
     struct Package *receivedPackage;
@@ -164,9 +162,7 @@ void executeStopAndWait(int fileSize, struct ServerInfo *serverInfo, uint32_t de
     int sequency = 0;
     unsigned int crc;
 
-    printf("Starting Stop and Wait protocol...\n");
-
-    printf("received file size %d\n", fileSize);
+    printf("\n\nStarting Stop and Wait protocol...\n");
 
     // file were the reiceved file will be saved
     file = fopen("receivedFile.txt", "w");
@@ -194,7 +190,7 @@ void executeStopAndWait(int fileSize, struct ServerInfo *serverInfo, uint32_t de
 
         printf("Received package from client.\n");
 
-        receivedPackage = parseToPackage(&buffer);
+        receivedPackage = &buffer;
 
         // check for CRC
         crc = crc32b((unsigned char *)&buffer, CRC_POLYNOME);
@@ -202,8 +198,6 @@ void executeStopAndWait(int fileSize, struct ServerInfo *serverInfo, uint32_t de
         // bitflip, ask for retransmission
         while (crc != buffer.crc)
         {
-            free(receivedPackage);
-
             package.destiny = destiny;
             package.source = source;
             package.type = ACK_TYPE;
@@ -230,7 +224,7 @@ void executeStopAndWait(int fileSize, struct ServerInfo *serverInfo, uint32_t de
 
             parseNetworkToPackage(&buffer);
 
-            receivedPackage = parseToPackage(&buffer);
+            receivedPackage = &buffer;
 
             // check for CRC
             crc = crc32b((unsigned char *)&buffer, CRC_POLYNOME);
@@ -269,8 +263,6 @@ void executeStopAndWait(int fileSize, struct ServerInfo *serverInfo, uint32_t de
         }
 
         printf("Request sent.\n");
-
-        free(receivedPackage);
     }
 
     if (sequency > 1)
@@ -300,26 +292,153 @@ void executeStopAndWait(int fileSize, struct ServerInfo *serverInfo, uint32_t de
     fclose(file);
 }
 
-//TODO fazer esse cara baseado no client
-void executeGoBackN(int size, int windowSize)
+void executeGoBackN(int fileSize, int windowSize, struct ServerInfo *serverInfo, uint32_t destiny, uint32_t source)
 {
     FILE *file;
 
-    file = fopen("receivedFile.txt", "w");
+    struct Package buffer;
+    struct Package package;
+    struct Package *receivedPackage;
+    int retSend;
+    int retRecv;
+    int sequency = 0;
+    int incrementedSequency;
+    unsigned int crc;
+    int c = sizeof(struct sockaddr_in);
+    int i;
 
+    printf("\n\nStarting Go Back N protocol...\n");
+
+    file = fopen("receivedFile.txt", "w");
     if (file == NULL)
     {
         perror("Error while creating received file.\n");
         exit(1);
     }
 
-    while (size > 0)
+    printf("File size initial: %d, window size: %d\n", fileSize, windowSize);
+
+    while (fileSize > 0)
     {
-        // receive
-        // check errors
-        // send ack
-        file -= windowSize;
+        for (i = 0; i < windowSize; i++)
+        {
+            if (fileSize <= 0)
+                break;
+
+            // receive package
+            retRecv = recvfrom(serverInfo->socket, (char *)&buffer, sizeof(buffer), 0,
+                               (struct sockaddr *)&serverInfo->clientaddr, (socklen_t *)&c);
+            if (retRecv < 0)
+            {
+                perror("Error recvfrom <= 0 Go Back N.\n");
+                exit(1);
+            }
+
+            parseNetworkToPackage(&buffer);
+            receivedPackage = &buffer;
+
+            printf("Received package from client.\n");
+
+            // check for CRC
+            crc = crc32b((unsigned char *)receivedPackage, CRC_POLYNOME);
+
+            printf("Received CRC: %d, Calculated CRC: %d \n", receivedPackage->crc, crc);
+
+            printf("Received sequency %d\n", receivedPackage->sequency);
+
+            // package has bitflips
+            if (crc != receivedPackage->crc)
+            {
+                package.destiny = destiny;
+                package.source = source;
+                package.type = ACK_TYPE;
+                package.sequency = sequency;
+
+                parsePackageToNetwork(&package);
+
+                retSend = sendto(serverInfo->socket, (const void *)&package, sizeof(package), 0,
+                                 (const struct sockaddr *)&serverInfo->clientaddr,
+                                 sizeof(struct sockaddr));
+                if (retSend < 0)
+                {
+                    perror("Error sending package to client. Go Back N\n");
+                    exit(1);
+                }
+
+                printf("DEU CRC ERRADO\n");
+                printf("crc recebido %d    CRC calculado %d \n", receivedPackage->crc, crc);
+
+                break;
+            }
+
+            // No bit flip in package
+
+            // write to file
+            fwrite(receivedPackage->data, sizeof(receivedPackage->data[0]),
+                   receivedPackage->size, file);
+
+            // decrement file size
+            fileSize -= receivedPackage->size;
+
+            printf("File size: %d, size received %d\n", fileSize, receivedPackage->size);
+
+            // sequency = sequency + windowSize == windowSize ? 0 : sequency + 1;
+            for (int j = 0; j < windowSize; j++)
+            {
+                sequency++;
+                if (sequency == windowSize)
+                    sequency = 0;
+            }
+            printf("Next sequency %d\n", sequency);
+
+            // request next frames
+            package.destiny = destiny;
+            package.source = source;
+            package.type = ACK_TYPE;
+            package.sequency = sequency;
+
+            parsePackageToNetwork(&package);
+
+            retSend = sendto(serverInfo->socket, (const void *)&package, sizeof(package), 0,
+                             (const struct sockaddr *)&serverInfo->clientaddr,
+                             sizeof(struct sockaddr));
+            if (retSend < 0)
+            {
+                perror("Error sending package to client. Stop and Wait\n");
+                exit(1);
+            }
+        }
     }
 
+    // sequency = sequency + 1 == windowSize ? 0 : sequency + 1;
+    for (int j = 0; j < windowSize; j++)
+    {
+        sequency++;
+        if (sequency == windowSize)
+            sequency = 0;
+    }
+    printf("Next sequency %d\n", sequency);
+
+    package.destiny = destiny;
+    package.source = source;
+    package.sequency = sequency;
+    package.type = ACK_TYPE;
+
+    parsePackageToNetwork(&package);
+
+    printf("Sending final ack for terminating.\n");
+
+    // Sends final ack for terminating
+    retSend = sendto(serverInfo->socket, (const void *)&package, sizeof(package), 0,
+                     (const struct sockaddr *)&serverInfo->clientaddr,
+                     sizeof(struct sockaddr));
+    if (retSend < 0)
+    {
+        perror("Error sendto terminating ack.\n");
+        exit(1);
+    }
+
+    printf("Final ack sent.\n");
+
     fclose(file);
-}
+}*/
