@@ -8,6 +8,8 @@
         "utility": "c",
         "istream": "c",
         "ostream": "c",
-        "initializer_list": "c"
+        "initializer_list": "c",
+        "in.h": "c",
+        "socket.h": "c"
     }
 }

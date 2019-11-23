@@ -10,7 +10,7 @@
 #include "macros.h"
 #include "utils.h"
 
-struct ServerInfo *startServer()
+struct ServerInfo *startServer(int port)
 {
     struct ServerInfo *si = (struct ServerInfo *)malloc(sizeof(struct ServerInfo));
 
@@ -28,7 +28,7 @@ struct ServerInfo *startServer()
     // Filling server information
     si->sockaddr.sin_family = AF_INET; // IPv4
     si->sockaddr.sin_addr.s_addr = INADDR_ANY;
-    si->sockaddr.sin_port = htons(SERVER_PORT);
+    si->sockaddr.sin_port = htons(port);
 
     // Bind the socket with the server address
     if (bind(si->socket, (const struct sockaddr *)&si->sockaddr,
@@ -38,29 +38,53 @@ struct ServerInfo *startServer()
         exit(EXIT_FAILURE);
     }
 
-    printf("Server binded on port: %d.\n", SERVER_PORT);
+    printf("Server binded on port: %d.\n", port);
     printf("Server started. Waiting for incoming connections...\n");
 
     return si;
 }
 
-// void executeStopAndWait(int fileSize, struct ServerInfo *serverInfo, uint32_t destiny, uint32_t source);
-// void executeGoBackN(int fileSize, int windowSize, struct ServerInfo *serverInfo, uint32_t destiny, uint32_t source);
+void getCommandLineArgs(int args, char **argc, int *port)
+{
+    int opt;
+    bool portInformed = false;
+
+    while ((opt = getopt(args, argc, ":p:")) != -1)
+    {
+        switch (opt)
+        {
+        case 'p':
+            *port = atoi(optarg);
+            portInformed = true;
+            break;
+        case '?':
+            printf("Unknown arguments: -%c\n", optopt);
+            exit(1);
+        }
+    }
+
+    if (!portInformed)
+        *port = SERVER_DEFAULT_PORT;
+}
 
 // gcc utils.c server.c -o server
-// ./server
-void main()
+// ./server -p 8888
+void main(int args, char **argc)
 {
     int newSocket;
     struct Package buffer;
+    int port;
 
-    struct ServerInfo *serverInfo = startServer();
+    // Parse command line arguments required for server program
+    getCommandLineArgs(args, argc, &port);
+
+    struct ServerInfo *serverInfo = startServer(port);
 
     int c = sizeof(struct sockaddr_in);
     while ((newSocket = recvfrom(serverInfo->socket, (char *)&buffer, sizeof(buffer), 0,
                                  (struct sockaddr *)&serverInfo->clientaddr, (socklen_t *)&c)) > 0)
     {
-        printf("Connection accepted\n");
+        printf("\nConnection accepted\n");
 
         // ******************* INITIAL PACKAGE *******************
 
@@ -149,296 +173,3 @@ void main()
         exit(EXIT_FAILURE);
     }
 }
-
-/*void executeStopAndWait(int fileSize, struct ServerInfo *serverInfo, uint32_t destiny, uint32_t source)
-{
-    FILE *file;
-    struct Package *receivedPackage;
-    struct Package package;
-    struct Package buffer;
-    int c;
-    int retRecv;
-    int retSend;
-    int sequency = 0;
-    unsigned int crc;
-
-    printf("\n\nStarting Stop and Wait protocol...\n");
-
-    // file were the reiceved file will be saved
-    file = fopen("receivedFile.txt", "w");
-    if (file == NULL)
-    {
-        perror("Error while creating received file in Stop and Wait.\n");
-        exit(1);
-    }
-
-    printf("File size initial: %d\n", fileSize);
-
-    while (fileSize > 0)
-    {
-        memset(&buffer, 0, sizeof(buffer));
-
-        retRecv = recvfrom(serverInfo->socket, (char *)&buffer, sizeof(buffer), 0,
-                           (struct sockaddr *)&serverInfo->clientaddr, (socklen_t *)&c);
-        if (retRecv < 0)
-        {
-            perror("Error getting package from client. Stop and Wait\n");
-            exit(1);
-        }
-
-        parseNetworkToPackage(&buffer);
-
-        printf("Received package from client.\n");
-
-        receivedPackage = &buffer;
-
-        // check for CRC
-        crc = crc32b((unsigned char *)&buffer, CRC_POLYNOME);
-
-        // bitflip, ask for retransmission
-        while (crc != buffer.crc)
-        {
-            package.destiny = destiny;
-            package.source = source;
-            package.type = ACK_TYPE;
-            package.sequency = sequency;
-
-            parsePackageToNetwork(&package);
-
-            retSend = sendto(serverInfo->socket, (const void *)&package, sizeof(package), 0,
-                             (const struct sockaddr *)&serverInfo->clientaddr,
-                             sizeof(struct sockaddr));
-            if (retSend < 0)
-            {
-                perror("Error sending package to client. Stop and Wait\n");
-                exit(1);
-            }
-
-            retRecv = recvfrom(serverInfo->socket, (char *)&buffer, sizeof(buffer), 0,
-                               (struct sockaddr *)&serverInfo->clientaddr, (socklen_t *)&c);
-            if (retRecv < 0)
-            {
-                perror("Error getting package from client. Stop and Wait\n");
-                exit(1);
-            }
-
-            parseNetworkToPackage(&buffer);
-
-            receivedPackage = &buffer;
-
-            // check for CRC
-            crc = crc32b((unsigned char *)&buffer, CRC_POLYNOME);
-        }
-
-        // write to file
-        fwrite(receivedPackage->data, sizeof(receivedPackage->data[0]),
-               receivedPackage->size, file);
-
-        // decrement file size
-        fileSize -= receivedPackage->size;
-
-        printf("File size: %d, size received %d\n", fileSize, receivedPackage->size);
-
-        sequency++;
-        if (sequency > 1)
-            sequency = 0;
-
-        package.destiny = destiny;
-        package.source = source;
-        package.sequency = sequency;
-        package.type = ACK_TYPE;
-
-        parsePackageToNetwork(&package);
-
-        printf("Requesting next frame to be transmitted.\n");
-
-        // send ACK for next frame
-        retSend = sendto(serverInfo->socket, (const void *)&package, sizeof(package), 0,
-                         (const struct sockaddr *)&serverInfo->clientaddr,
-                         sizeof(struct sockaddr));
-        if (retSend < 0)
-        {
-            perror("Error sendto requesting next frame.\n");
-            exit(1);
-        }
-
-        printf("Request sent.\n");
-    }
-
-    if (sequency > 1)
-        sequency = 0;
-
-    package.destiny = destiny;
-    package.source = source;
-    package.sequency = sequency;
-    package.type = ACK_TYPE;
-
-    parsePackageToNetwork(&package);
-
-    printf("Sending final ack for terminating.\n");
-
-    // Sends final ack for terminating
-    retSend = sendto(serverInfo->socket, (const void *)&package, sizeof(package), 0,
-                     (const struct sockaddr *)&serverInfo->clientaddr,
-                     sizeof(struct sockaddr));
-    if (retSend < 0)
-    {
-        perror("Error sendto terminating ack.\n");
-        exit(1);
-    }
-
-    printf("Final ack sent.\n");
-
-    fclose(file);
-}
-
-void executeGoBackN(int fileSize, int windowSize, struct ServerInfo *serverInfo, uint32_t destiny, uint32_t source)
-{
-    FILE *file;
-
-    struct Package buffer;
-    struct Package package;
-    struct Package *receivedPackage;
-    int retSend;
-    int retRecv;
-    int sequency = 0;
-    int incrementedSequency;
-    unsigned int crc;
-    int c = sizeof(struct sockaddr_in);
-    int i;
-
-    printf("\n\nStarting Go Back N protocol...\n");
-
-    file = fopen("receivedFile.txt", "w");
-    if (file == NULL)
-    {
-        perror("Error while creating received file.\n");
-        exit(1);
-    }
-
-    printf("File size initial: %d, window size: %d\n", fileSize, windowSize);
-
-    while (fileSize > 0)
-    {
-        for (i = 0; i < windowSize; i++)
-        {
-            if (fileSize <= 0)
-                break;
-
-            // receive package
-            retRecv = recvfrom(serverInfo->socket, (char *)&buffer, sizeof(buffer), 0,
-                               (struct sockaddr *)&serverInfo->clientaddr, (socklen_t *)&c);
-            if (retRecv < 0)
-            {
-                perror("Error recvfrom <= 0 Go Back N.\n");
-                exit(1);
-            }
-
-            parseNetworkToPackage(&buffer);
-            receivedPackage = &buffer;
-
-            printf("Received package from client.\n");
-
-            // check for CRC
-            crc = crc32b((unsigned char *)receivedPackage, CRC_POLYNOME);
-
-            printf("Received CRC: %d, Calculated CRC: %d \n", receivedPackage->crc, crc);
-
-            printf("Received sequency %d\n", receivedPackage->sequency);
-
-            // package has bitflips
-            if (crc != receivedPackage->crc)
-            {
-                package.destiny = destiny;
-                package.source = source;
-                package.type = ACK_TYPE;
-                package.sequency = sequency;
-
-                parsePackageToNetwork(&package);
-
-                retSend = sendto(serverInfo->socket, (const void *)&package, sizeof(package), 0,
-                                 (const struct sockaddr *)&serverInfo->clientaddr,
-                                 sizeof(struct sockaddr));
-                if (retSend < 0)
-                {
-                    perror("Error sending package to client. Go Back N\n");
-                    exit(1);
-                }
-
-                printf("DEU CRC ERRADO\n");
-                printf("crc recebido %d    CRC calculado %d \n", receivedPackage->crc, crc);
-
-                break;
-            }
-
-            // No bit flip in package
-
-            // write to file
-            fwrite(receivedPackage->data, sizeof(receivedPackage->data[0]),
-                   receivedPackage->size, file);
-
-            // decrement file size
-            fileSize -= receivedPackage->size;
-
-            printf("File size: %d, size received %d\n", fileSize, receivedPackage->size);
-
-            // sequency = sequency + windowSize == windowSize ? 0 : sequency + 1;
-            for (int j = 0; j < windowSize; j++)
-            {
-                sequency++;
-                if (sequency == windowSize)
-                    sequency = 0;
-            }
-            printf("Next sequency %d\n", sequency);
-
-            // request next frames
-            package.destiny = destiny;
-            package.source = source;
-            package.type = ACK_TYPE;
-            package.sequency = sequency;
-
-            parsePackageToNetwork(&package);
-
-            retSend = sendto(serverInfo->socket, (const void *)&package, sizeof(package), 0,
-                             (const struct sockaddr *)&serverInfo->clientaddr,
-                             sizeof(struct sockaddr));
-            if (retSend < 0)
-            {
-                perror("Error sending package to client. Stop and Wait\n");
-                exit(1);
-            }
-        }
-    }
-
-    // sequency = sequency + 1 == windowSize ? 0 : sequency + 1;
-    for (int j = 0; j < windowSize; j++)
-    {
-        sequency++;
-        if (sequency == windowSize)
-            sequency = 0;
-    }
-    printf("Next sequency %d\n", sequency);
-
-    package.destiny = destiny;
-    package.source = source;
-    package.sequency = sequency;
-    package.type = ACK_TYPE;
-
-    parsePackageToNetwork(&package);
-
-    printf("Sending final ack for terminating.\n");
-
-    // Sends final ack for terminating
-    retSend = sendto(serverInfo->socket, (const void *)&package, sizeof(package), 0,
-                     (const struct sockaddr *)&serverInfo->clientaddr,
-                     sizeof(struct sockaddr));
-    if (retSend < 0)
-    {
-        perror("Error sendto terminating ack.\n");
-        exit(1);
-    }
-
-    printf("Final ack sent.\n");
-
-    fclose(file);
-}*/

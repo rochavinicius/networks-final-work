@@ -22,8 +22,8 @@ void parseNetworkToPackage(struct Package *package);
 
 struct ConnectionData *parseToConnectionData(char input[9]);
 
-void clientStopAndWait(int fileSize, char fileName[], struct ClientInfo *clientInfo);
-void clientGoBackN(int fileSize, char fileName[], struct ClientInfo *clientInfo, int windowSize);
+void clientStopAndWait(int fileSize, char fileName[], struct ClientInfo *clientInfo, bool hasErrorInsertion);
+void clientGoBackN(int fileSize, char fileName[], struct ClientInfo *clientInfo, int windowSize, bool hasErrorInsertion);
 
 void serverStopAndWait(int fileSize, struct ServerInfo *serverInfo, uint32_t destiny, uint32_t source);
 void serverGoBackN(int fileSize, int windowSize, struct ServerInfo *serverInfo, uint32_t destiny, uint32_t source);

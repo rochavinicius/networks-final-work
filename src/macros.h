@@ -4,8 +4,8 @@
 #include <sys/types.h>
 #include <netinet/in.h>
 
-#define SERVER_IP "127.0.0.1"
-#define SERVER_PORT 8888
+#define SERVER_DEFAULT_IP "127.0.0.1"
+#define SERVER_DEFAULT_PORT 8888
 #define MAX_BUFFER_SIZE 256
 
 #define DATA_TYPE 0
