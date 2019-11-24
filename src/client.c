@@ -162,8 +162,6 @@ void main(int args, char **argc)
     // Start connection with server
     struct ClientInfo *clientInfo = startClient(ip, port);
 
-    //TODO passar a opcao de erro adiante e fazer o modulo de erro
-
     while (1)
     {
         FILE *file;
@@ -203,7 +201,7 @@ void main(int args, char **argc)
         package.size = sizeof(struct ConnectionData);
         memcpy(package.data, &data, sizeof(struct ConnectionData));
         package.crc = 0;
-        package.crc = crc32b((unsigned char *)&package, CRC_POLYNOME);
+        package.crc = crc32_of_buffer((const char *)&package, sizeof(struct Package));
 
         printf("CRC calculated %d.\n", package.crc);
 

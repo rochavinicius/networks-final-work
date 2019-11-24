@@ -13,9 +13,10 @@
 #include <stdbool.h>
 #include <errno.h>
 #include <netdb.h>
+#include <stdbool.h>
 #include "macros.h"
 
-unsigned int crc32b(unsigned char *message, unsigned int polynome);
+u_int32_t crc32_of_buffer(const char *buf, int buflen);
 
 void parsePackageToNetwork(struct Package *package);
 void parseNetworkToPackage(struct Package *package);

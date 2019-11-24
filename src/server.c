@@ -86,18 +86,18 @@ void main(int args, char **argc)
     {
         printf("\nConnection accepted\n");
 
-        // ******************* INITIAL PACKAGE *******************
-
         parseNetworkToPackage(&buffer);
 
         // for connection stablishment package, do not use any flow control technique
         // just drop it case its with error
-        unsigned int crcRet = crc32b((unsigned char *)&buffer, CRC_POLYNOME);
+        unsigned int receivedCrc = buffer.crc;
+        buffer.crc = 0;
+        unsigned int crcRet = crc32_of_buffer((const char *)&buffer, sizeof(struct Package));
 
         printf("CRC calculated for package: %d.\n", crcRet);
-        printf("CRC recebida: %d\n", buffer.crc);
+        printf("CRC recebida: %d\n", receivedCrc);
 
-        if (crcRet != buffer.crc)
+        if (crcRet != receivedCrc)
             continue;
 
         // Parse main pakage
@@ -137,7 +137,7 @@ void main(int args, char **argc)
         ackPackage.type = 1;
         ackPackage.sequency = 0;
         ackPackage.crc = 0;
-        ackPackage.crc = crc32b((unsigned char *)&ackPackage, CRC_POLYNOME);
+        ackPackage.crc = crc32_of_buffer((const char *)&package, sizeof(struct Package));
 
         parsePackageToNetwork(&ackPackage);
 
