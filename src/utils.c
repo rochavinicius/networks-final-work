@@ -62,7 +62,7 @@ u_int32_t crc32_of_buffer(const char *buf, int buflen)
 }
 
 /*
-*******************************************************************************
+****************************** END OF CRC SECTION *************************************************
 */
 
 void parsePackageToNetwork(struct Package *package)
@@ -286,7 +286,7 @@ void clientGoBackN(int fileSize, char fileName[], struct ClientInfo *clientInfo,
     {
         srand(5);
         errorInsertionMask = rand() % 256;
-        frameWithError = 1;
+        frameWithError = rand() % windowSize;
         printf("ERROR MASK: %d, frame to have bitflip: %d\n", errorInsertionMask, frameWithError);
     }
 
@@ -538,7 +538,7 @@ void clientGoBackN(int fileSize, char fileName[], struct ClientInfo *clientInfo,
             //     break;
         }
         /*
-        *   End of retransmission handling          *********
+        *   End of retransmission handling
         */
     }
 

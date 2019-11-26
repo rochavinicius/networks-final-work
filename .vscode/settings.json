@@ -10,6 +10,7 @@
         "ostream": "c",
         "initializer_list": "c",
         "in.h": "c",
-        "socket.h": "c"
+        "socket.h": "c",
+        "stdio.h": "c"
     }
 }

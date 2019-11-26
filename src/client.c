@@ -17,8 +17,6 @@
 struct ClientInfo *startClient(char ip[], int port)
 {
     struct ClientInfo *clientInfo = (struct ClientInfo *)malloc(sizeof(struct ClientInfo));
-    int clientSocket;
-    struct sockaddr_in server_addr;
     int hostName;
     char hostBuffer[256];
     struct hostent *hostEntry;
@@ -26,7 +24,7 @@ struct ClientInfo *startClient(char ip[], int port)
     printf("Starting client service...\n");
 
     // Creating socket file descriptor
-    if ((clientSocket = socket(AF_INET, SOCK_DGRAM, 0)) < 0)
+    if ((clientInfo->socket = socket(AF_INET, SOCK_DGRAM, 0)) < 0)
     {
         perror("Client socket creation failed.\n");
         exit(EXIT_FAILURE);
@@ -35,18 +33,15 @@ struct ClientInfo *startClient(char ip[], int port)
     printf("Client socket created.\n");
 
     // Filling server information
-    server_addr.sin_family = AF_INET; // IPv4
-    server_addr.sin_addr.s_addr = inet_addr(ip);
-    server_addr.sin_port = htons(port);
+    clientInfo->sockaddr.sin_family = AF_INET; // IPv4
+    clientInfo->sockaddr.sin_addr.s_addr = inet_addr("10.32.160.141");
+    clientInfo->sockaddr.sin_port = htons(port);
+
+    printf("Port: %d  ip: %s \n", port, ip);
 
     printf("Client started. Ready to send data...\n");
 
-    clientInfo->socket = clientSocket;
-    clientInfo->sockaddr = server_addr;
-
-    hostName = gethostname(hostBuffer, sizeof(hostBuffer));
-    hostEntry = gethostbyname(hostBuffer);
-    clientInfo->clientIp = inet_ntoa(*(struct in_addr *)hostEntry->h_addr_list[0]);
+    clientInfo->clientIp = "10.32.160.35";
 
     return clientInfo;
 }
@@ -143,7 +138,7 @@ void getCommandLineArgs(int args, char **argc, int *flowControl, int *windowSize
 
 // gcc utils.c client.c -o client
 // ./client -f 0 -ws 5 -i 127.0.0.1 -p 8888
-// ./client -f {flowControl} -ws {windowSize} -ip {server ip}
+// ./client -f {flowControl} -ws {windowSize} -i {server ip} -p {server port}
 void main(int args, char **argc)
 {
     int newSocket;
@@ -158,6 +153,8 @@ void main(int args, char **argc)
 
     // Parse command line arguments required for client program
     getCommandLineArgs(args, argc, &flowControl, &windowSize, ip, &port, &hasErrorInsertion);
+
+    printf("port %d\n", port);
 
     // Start connection with server
     struct ClientInfo *clientInfo = startClient(ip, port);
@@ -207,8 +204,8 @@ void main(int args, char **argc)
 
         parsePackageToNetwork(&package);
 
-        retSend = sendto(clientInfo->socket, (const void *)&package, sizeof(struct Package),
-                         0, (const struct sockaddr *)&clientInfo->sockaddr, sizeof(struct sockaddr));
+        retSend = sendto(clientInfo->socket, (const void *)&package, sizeof(package),
+                         0, (const struct sockaddr *)&clientInfo->sockaddr, sizeof(clientInfo->sockaddr));
 
         if (retSend < 0)
         {
